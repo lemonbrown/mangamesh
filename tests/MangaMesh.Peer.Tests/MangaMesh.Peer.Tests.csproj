@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\mangamesh-peer\src\MangaMesh.Peer\MangaMesh.Peer\MangaMesh.Peer.csproj" />
+    <ProjectReference Include="..\..\src\MangaMesh.Peer\MangaMesh.Peer.Core\MangaMesh.Peer.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

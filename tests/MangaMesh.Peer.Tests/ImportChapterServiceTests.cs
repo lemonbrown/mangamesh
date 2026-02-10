@@ -1,21 +1,14 @@
-using MangaMesh.Client.Chapters;
-using MangaMesh.Client.Keys;
-using MangaMesh.Client.Manifests;
-using MangaMesh.Client.Node;
-using MangaMesh.Client.Tracker;
-using MangaMesh.Client.Blob;
 using MangaMesh.Shared.Models;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using MangaMesh.Client.Content;
+using MangaMesh.Peer.Core.Manifests;
+using MangaMesh.Peer.Core.Chapters;
+using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Tracker;
+using MangaMesh.Peer.Core.Node;
+using MangaMesh.Peer.Core.Keys;
 
-namespace MangaMesh.Client.Tests
+namespace MangaMesh.Peer.Tests
 {
     [TestClass]
     public class ImportChapterServiceTests
@@ -112,7 +105,7 @@ namespace MangaMesh.Client.Tests
             _mockNodeIdentity.Setup(x => x.NodeId).Returns("node-1");
 
             _mockTrackerClient.Setup(x => x.CreateChallengeAsync(It.IsAny<string>()))
-                .ReturnsAsync(new KeyChallengeResponse { ChallengeId = "chal-1", Nonce = "nonce-1" });
+                .ReturnsAsync(new Shared.Models.KeyChallengeResponse { ChallengeId = "chal-1", Nonce = "nonce-1" });
 
             _mockKeyPairService.Setup(x => x.SolveChallenge(It.IsAny<string>(), It.IsAny<string>()))
                 .Returns("signature-1");
@@ -145,7 +138,7 @@ namespace MangaMesh.Client.Tests
                 !string.IsNullOrEmpty(m.Signature) // Final save is signed
             )), Times.Once);
 
-            _mockTrackerClient.Verify(x => x.AnnounceManifestAsync(It.Is<AnnounceManifestRequest>(req =>
+            _mockTrackerClient.Verify(x => x.AnnounceManifestAsync(It.Is<Shared.Models.AnnounceManifestRequest>(req =>
                 req.ChapterNumber == 1.0f &&
                 !string.IsNullOrEmpty(req.Signature)
             ), It.IsAny<CancellationToken>()), Times.Once);

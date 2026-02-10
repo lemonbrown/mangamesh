@@ -1,17 +1,17 @@
-using MangaMesh.Client.Content;
-using MangaMesh.Client.Keys;
-using MangaMesh.Client.Node;
-using MangaMesh.Client.Transport;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Moq;
-using MangaMesh.Client.Blob;
 using System.IO;
+using MangaMesh.Peer.Core.Transport;
+using MangaMesh.Peer.Core.Keys;
+using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Node;
 
-namespace MangaMesh.Client.Tests
+namespace MangaMesh.Peer.Tests
 {
     [TestClass]
     public class ContentProtocolTests
@@ -211,7 +211,10 @@ namespace MangaMesh.Client.Tests
             // DhtNode constructor expects IKeyStore. The InMemoryKeyStore below implements it.
             // Oh, CreateNode uses InMemoryKeyStore.
 
-            var node = new DhtNode(identity, transport, storage, keyPairService, keyStore);
+            var mockTracker = new Mock<MangaMesh.Peer.Core.Tracker.ITrackerClient>();
+            var connectionInfo = new ConsoleNodeConnectionInfoProvider();
+
+            var node = new DhtNode(identity, transport, storage, keyPairService, keyStore, mockTracker.Object, connectionInfo);
             
             _nodes.Add(node);
             return (node, transport);

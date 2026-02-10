@@ -1,0 +1,76 @@
+﻿using MangaMesh.Peer.Core.Storage;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace MangaMesh.Peer.Core.Blob
+{
+    public sealed class BlobStore : IBlobStore
+    {
+        private readonly string _root;
+        private readonly IStorageMonitorService _storageMonitor;
+
+        public BlobStore(string root, IStorageMonitorService storageMonitor)
+        {
+            _root = root;
+            _storageMonitor = storageMonitor;
+            Directory.CreateDirectory(_root);
+        }
+
+        public async Task<BlobHash> PutAsync(Stream data)
+        {
+            using var sha = SHA256.Create();
+            using var temp = new MemoryStream();
+
+            await data.CopyToAsync(temp);
+            temp.Position = 0;
+
+            var hashBytes = sha.ComputeHash(temp);
+            var hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+            var blobHash = new BlobHash(hash);
+
+            var path = GetPath(blobHash);
+            if (File.Exists(path))
+                return blobHash;
+
+            await _storageMonitor.EnsureStorageAvailable(temp.Length);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            temp.Position = 0;
+            var tmpPath = path + ".tmp";
+
+            await using (var fs = File.Create(tmpPath))
+                await temp.CopyToAsync(fs);
+
+            File.Move(tmpPath, path, overwrite: false);
+
+            _storageMonitor.NotifyBlobWritten(temp.Length);
+
+            return blobHash;
+        }
+
+        public async Task<Stream?> OpenReadAsync(BlobHash hash)
+        {
+            var path = GetPath(hash);
+            if (!File.Exists(path))
+                return null;
+
+            return File.OpenRead(path);
+        }
+
+        public bool Exists(BlobHash hash)
+            => File.Exists(GetPath(hash));
+
+        private string GetPath(BlobHash hash)
+        {
+            var a = hash.Value[..2];
+            var b = hash.Value[2..4];
+            return Path.Combine(_root, a, b, hash.Value);
+        }
+    }
+
+}

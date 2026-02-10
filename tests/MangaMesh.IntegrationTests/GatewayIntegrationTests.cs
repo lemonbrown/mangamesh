@@ -1,7 +1,4 @@
 extern alias GatewayApi;
-using MangaMesh.Client.Content;
-using MangaMesh.Client.Node;
-using MangaMesh.Client.Transport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,17 +6,25 @@ using Microsoft.Extensions.Hosting;
 using System.Net;
 using System.Text.Json;
 using System.Text;
-using MangaMesh.Client.Keys;
 using Moq;
 using Microsoft.EntityFrameworkCore;
-using MangaMesh.Client.Blob;
-using GatewayApi::MangaMesh.GatewayApi.Config;
+using MangaMesh.Peer.Core.Transport;
+using MangaMesh.Peer.Core.Keys;
+using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Data;
+using MangaMesh.Peer.Core.Node;
+using MangaMesh.Peer.Core.Tracker;
+using GatewayApi::MangaMesh.Peer.GatewayApi.Config;
 
 namespace MangaMesh.IntegrationTests
 {
     [TestClass]
     public class GatewayIntegrationTests
     {
+        // ... (lines 24-100 irrelevant for replacement context if I narrow it down, but I'll focus on imports and constructor)
+        // I'll do two replaces. One for imports, one for constructor.
+
         private WebApplicationFactory<GatewayApi::Program> _factory;
         private HttpClient _client;
         private IDhtNode _gatewayNode;
@@ -54,7 +59,7 @@ namespace MangaMesh.IntegrationTests
                         });
 
                         // Aggressive removal of all ClientDbContext related services
-                        var dbContextType = typeof(MangaMesh.Client.Data.ClientDbContext);
+                        var dbContextType = typeof(ClientDbContext);
                         var servicesToRemove = services.Where(d =>
                             d.ServiceType == dbContextType ||
                             d.ServiceType == typeof(DbContextOptions) ||
@@ -66,7 +71,7 @@ namespace MangaMesh.IntegrationTests
                             services.Remove(descriptor);
                         }
 
-                        services.AddDbContext<MangaMesh.Client.Data.ClientDbContext>(options =>
+                        services.AddDbContext<ClientDbContext>(options =>
                             options.UseInMemoryDatabase("GatewayTestDb_" + Guid.NewGuid()));
                     });
                 });
@@ -99,7 +104,10 @@ namespace MangaMesh.IntegrationTests
 
             var mockKeyStore = new Mock<IKeyStore>();
 
-            _peerNode = new DhtNode(identity, _peerTransport, storage, mockKeyPairService.Object, mockKeyStore.Object);
+            var mockTracker = new Mock<ITrackerClient>();
+            var connectionInfo = new ConsoleNodeConnectionInfoProvider();
+
+            _peerNode = new DhtNode(identity, _peerTransport, storage, mockKeyPairService.Object, mockKeyStore.Object, mockTracker.Object, connectionInfo);
 
             // Wire up protocol handlers for Peer Node
             var router = new ProtocolRouter();

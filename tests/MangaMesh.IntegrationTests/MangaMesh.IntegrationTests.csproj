@@ -15,11 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\mangamesh-peer\src\MangaMesh.Peer\MangaMesh.GatewayApi\MangaMesh.GatewayApi.csproj">
-      <Aliases>GatewayApi</Aliases>
-    </ProjectReference>
-    <ProjectReference Include="..\..\src\mangamesh-index\src\MangaMesh.Index\MangaMesh.Backend.Index\MangaMesh.Backend.Index.csproj">
+    <ProjectReference Include="..\..\src\MangaMesh.Index\MangaMesh.Index.Api\MangaMesh.Index.Api.csproj">
       <Aliases>Index</Aliases>
+    </ProjectReference>
+    <ProjectReference Include="..\..\src\MangaMesh.Peer\MangaMesh.Peer.GatewayApi\MangaMesh.Peer.GatewayApi.csproj">
+      <Aliases>GatewayApi</Aliases>
     </ProjectReference>
   </ItemGroup>
 

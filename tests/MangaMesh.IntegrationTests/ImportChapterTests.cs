@@ -1,23 +1,24 @@
 extern alias Index;
-using MangaMesh.Client.Blob;
-using MangaMesh.Client.Chapters;
-using MangaMesh.Client.Content;
-using MangaMesh.Client.Keys;
-using MangaMesh.Client.Manifests;
-using MangaMesh.Client.Node;
-using MangaMesh.Client.Tracker;
 using MangaMesh.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
-using Index::MangaMesh.Backend.Tracker.Models;
-using Index::MangaMesh.Backend.Tracker.Stores;
-using Index::MangaMesh.Backend.Tracker.Services;
-using KeyPairResult = MangaMesh.Client.Keys.KeyPairResult;
+using KeyPairResult = MangaMesh.Peer.Core.Keys.KeyPairResult;
 using ChapterManifest = MangaMesh.Shared.Models.ChapterManifest;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-// Alias to avoid ambiguity with Tracker.Services.IMangaMetadataProvider
-using IIndexMetadataProvider = Index::MangaMesh.Backend.Tracker.Services.IMangaMetadataProvider;
+
+using MangaMesh.Peer.Core.Manifests;
+using MangaMesh.Peer.Core.Tracker;
+using MangaMesh.Peer.Core.Keys;
+using MangaMesh.Peer.Core.Chapters;
+using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Node;
+using Index::MangaMesh.Index.Api.Models;
+using Index::MangaMesh.Index.Api.Stores;
+using Index::MangaMesh.Index.Api.Services;
+using MangaMesh.Shared.Stores;
+using MangaMesh.Shared.Services;
 
 namespace MangaMesh.IntegrationTests
 {
@@ -28,7 +29,7 @@ namespace MangaMesh.IntegrationTests
         private Mock<INodeIdentityService> _mockNodeIdentity;
         private Mock<IBlobStore> _mockBlobStore;
         private Mock<IManifestStore> _mockManifestStore;
-        private Mock<IIndexMetadataProvider> _mockMetadataProvider;
+        private Mock<IMangaMetadataProvider> _mockMetadataProvider;
 
         private IKeyPairService _keyPairService;
         private IChunkIngester _chunkIngester;
@@ -41,11 +42,11 @@ namespace MangaMesh.IntegrationTests
         public async Task Setup()
         {
             // 0. Mock Index Metadata Provider (to avoid external calls)
-            _mockMetadataProvider = new Mock<IIndexMetadataProvider>();
+            _mockMetadataProvider = new Mock<IMangaMetadataProvider>();
             _mockMetadataProvider.Setup(p => p.GetMangaAsync(It.IsAny<string>()))
-                .ReturnsAsync((string id) => new MangaMetadata 
-                { 
-                    ExternalMangaId = id, 
+                .ReturnsAsync((string id) => new MangaMetadata
+                {
+                    ExternalMangaId = id,
                     Source = ExternalMetadataSource.AniList,
                     CanonicalTitle = "Mock Manga Title",
                     AltTitles = new List<string> { "Mock Manga Title" }
@@ -56,7 +57,7 @@ namespace MangaMesh.IntegrationTests
             {
                 builder.ConfigureServices(services =>
                 {
-                    services.RemoveAll<IIndexMetadataProvider>();
+                    services.RemoveAll<IMangaMetadataProvider>();
                     services.AddSingleton(_mockMetadataProvider.Object);
                 });
             });
@@ -64,7 +65,7 @@ namespace MangaMesh.IntegrationTests
             Client = Factory.CreateClient();
 
             _mockKeyStore = new Mock<IKeyStore>();
-            
+
             // 1. Setup Peer Dependencies
             _keyPairService = new KeyPairService(_mockKeyStore.Object); // Real service
             _peerKeys = await _keyPairService.GenerateKeyPairBase64Async();
@@ -100,6 +101,15 @@ namespace MangaMesh.IntegrationTests
                 {
                     PublicKeyBase64 = _peerKeys.PublicKeyBase64,
                     RegisteredAt = DateTime.UtcNow
+                });
+
+                var nodeRegistry = scope.ServiceProvider.GetRequiredService<INodeRegistry>();
+                nodeRegistry.RegisterOrUpdate(new TrackerNode
+                {
+                    NodeId = "test-peer-node-id",
+                    IP = "127.0.0.1",
+                    Port = 5000,
+                    LastSeen = DateTime.UtcNow
                 });
             }
 

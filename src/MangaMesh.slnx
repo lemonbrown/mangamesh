@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/Index/">
+    <Project Path="MangaMesh.Index/MangaMesh.Index.AdminApi/MangaMesh.Index.AdminApi.csproj" Id="6e951aab-59a9-4f93-8d87-59277948c88e" />
+    <Project Path="MangaMesh.Index/MangaMesh.Index.Api/MangaMesh.Index.Api.csproj" />
+  </Folder>
+  <Folder Name="/Peer/">
+    <Project Path="MangaMesh.Peer/MangaMesh.Peer.ClientApi/MangaMesh.Peer.ClientApi.csproj" />
+    <Project Path="MangaMesh.Peer/MangaMesh.Peer.Core/MangaMesh.Peer.Core.csproj" />
+    <Project Path="MangaMesh.Peer/MangaMesh.Peer.Dht.TestHarness/MangaMesh.Peer.Dht.TestHarness.csproj" />
+    <Project Path="MangaMesh.Peer/MangaMesh.Peer.GatewayApi/MangaMesh.Peer.GatewayApi.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="MangaMesh.Shared/MangaMesh.Shared.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="../tests/MangaMesh.IntegrationTests/MangaMesh.IntegrationTests.csproj" />
+    <Project Path="../tests/MangaMesh.Peer.Tests/MangaMesh.Peer.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,6 +1,6 @@
 extern alias Index;
 
-using Index::MangaMesh.Backend.Tracker.Data;
+using MangaMesh.Shared.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -22,7 +22,7 @@ namespace MangaMesh.IntegrationTests
                     builder.ConfigureServices(services =>
                     {
                         // Aggressive removal of all TrackerDbContext related services
-                        var dbContextType = typeof(TrackerDbContext);
+                        var dbContextType = typeof(IndexDbContext);
                         var servicesToRemove = services.Where(d =>
                             d.ServiceType == dbContextType ||
                             d.ServiceType == typeof(DbContextOptions) ||
@@ -36,7 +36,7 @@ namespace MangaMesh.IntegrationTests
 
                         // Add InMemory DbContext
                         var dbName = "IndexTestDb_" + Guid.NewGuid();
-                        services.AddDbContext<TrackerDbContext>(options =>
+                        services.AddDbContext<IndexDbContext>(options =>
                         {
                             options.UseInMemoryDatabase(dbName);
                         });
