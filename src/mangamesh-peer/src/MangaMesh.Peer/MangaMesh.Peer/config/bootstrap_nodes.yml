@@ -1,0 +1,14 @@
+- nodeId: 12612f87961a66594f79f64b465288fc39bbf1710247e2005b67789c3544af94
+  address:
+    host: host.docker.internal
+    port: 3001
+    
+- nodeId: 6bfc7054042d2fe4b89c59deb3bc64db49a4ee4209809cbb3a81010f46700bad
+  address:
+    host: host.docker.internal
+    port: 3002
+
+- nodeId: 803fd9c884eaf76661ac89f6bc3ab5c49fddd187b130f07596971676e391bac3
+  address:
+    host: host.docker.internal
+    port: 3003

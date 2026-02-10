@@ -1,0 +1,6 @@
+@MangaMesh.Server_HostAddress = http://localhost:5202
+
+GET {{MangaMesh.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

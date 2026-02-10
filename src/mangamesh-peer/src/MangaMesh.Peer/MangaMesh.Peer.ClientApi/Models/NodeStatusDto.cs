@@ -1,0 +1,10 @@
+﻿namespace MangaMesh.Server.Models
+{
+    public record NodeStatusDto(
+        string NodeId,
+        int PeerCount,
+        int SeededManifests,
+        long StorageUsedMb
+    );
+
+}
