@@ -152,8 +152,6 @@ namespace MangaMesh.Peer.Core.Node
 
                 var request = new Shared.Models.AnnounceRequest(
                     Convert.ToHexString(Identity.NodeId).ToLowerInvariant(),
-                    ip,
-                    port,
                     new List<string>() // Empty for now, or populate if we track manifests separately
                 );
 

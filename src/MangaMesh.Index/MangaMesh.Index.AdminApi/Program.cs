@@ -1,5 +1,9 @@
 using MangaMesh.Shared.Services;
 using MangaMesh.Shared.Stores;
+using MangaMesh.Shared.Data;
+using MangaMesh.Shared.Models;
+using Microsoft.EntityFrameworkCore;
+using MangaMesh.Index.AdminApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,13 +22,34 @@ builder.Services.AddCors(options =>
     });
 });
 
-// TODO: Register implementations for these interfaces if running standalone.
-// Currently they are implemented in MangaMesh.Index.Api.
-// builder.Services.AddSingleton<INodeRegistry, ...>();
-// builder.Services.AddSingleton<IManifestEntryStore, ...>();
-// builder.Services.AddSingleton<ISeriesRegistry, ...>();
-// builder.Services.AddSingleton<IPublicKeyStore, ...>();
-// builder.Services.AddSingleton<IApprovedKeyStore, ...>();
+// Database
+builder.Services.AddDbContext<IndexDbContext>(options =>
+    options.UseSqlite($"Data Source={Path.Combine(AppContext.BaseDirectory, "data", "tracker.db")}"));
+
+// Service Implementations
+// Register Configuration
+builder.Services.Configure<MangaMesh.Index.AdminApi.Configuration.TrackerSettings>(
+    builder.Configuration.GetSection("Tracker"));
+
+// Service Implementations
+builder.Services.AddHttpClient<ITrackerService, MangaMesh.Index.AdminApi.Services.HttpTrackerService>();
+
+// builder.Services.AddSingleton<INodeRegistry, NodeRegistry>(); // Removed as we use TrackerService now
+builder.Services.AddSingleton<IManifestEntryStore, JsonManifestEntryStore>();
+builder.Services.AddSingleton<ISeriesRegistry, JsonSeriesRegistry>();
+builder.Services.AddScoped<ISeriesStore, ManifestDerivedSeriesStore>();
+builder.Services.AddScoped<IPublicKeyRegistry, PublicKeyRegistry>();
+builder.Services.AddScoped<IPublicKeyStore, SqlitePublicKeyStore>();
+builder.Services.AddScoped<IApprovedKeyStore, SqliteApprovedKeyStore>();
+builder.Services.AddScoped<IChallengeStore, SqliteChallengeStore>();
+builder.Services.AddSingleton<IManifestAuthorizationService, ManifestAuthorizationService>();
+
+// Metadata Provider (using fake/cache for now to avoid complexity or just use what Index.Api uses)
+// Using JsonMangaMetadataProvider as a fallback or shared one
+var metadataDir = Path.Combine(AppContext.BaseDirectory, "data", "metadata");
+Directory.CreateDirectory(metadataDir);
+builder.Services.AddSingleton<IMangaMetadataProvider>(new JsonMangaMetadataProvider(metadataDir, "metadata.json"));
+
 
 var app = builder.Build();
 

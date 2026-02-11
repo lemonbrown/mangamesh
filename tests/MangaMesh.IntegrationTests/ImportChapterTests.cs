@@ -107,8 +107,6 @@ namespace MangaMesh.IntegrationTests
                 nodeRegistry.RegisterOrUpdate(new TrackerNode
                 {
                     NodeId = "test-peer-node-id",
-                    IP = "127.0.0.1",
-                    Port = 5000,
                     LastSeen = DateTime.UtcNow
                 });
             }

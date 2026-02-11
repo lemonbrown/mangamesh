@@ -83,7 +83,7 @@ namespace MangaMesh.Peer.Core.Replication
         {
             try
             {
-                var (ip, port) = await _connectionInfo.GetConnectionInfoAsync();
+            // var (ip, port) = await _connectionInfo.GetConnectionInfoAsync(); // No longer needed
 
                 // 1. Calculate smart sync hash
                 var (setHash, count) = await manifests.GetSetHashAsync();
@@ -91,8 +91,6 @@ namespace MangaMesh.Peer.Core.Replication
                 // 2. Try lightweight Ping
                 var isSynced = await tracker.PingAsync(
                     _nodeIdentity.NodeId,
-                    ip,
-                    port,
                     setHash,
                     count
                 );
@@ -111,8 +109,6 @@ namespace MangaMesh.Peer.Core.Replication
                 var announcementRequest = new Shared.Models.AnnounceRequest
                 (
                     _nodeIdentity.NodeId,
-                    ip,
-                    port,
                     manifestHashes.Select(m => m.Value).ToList());
 
                 await tracker.AnnounceAsync(

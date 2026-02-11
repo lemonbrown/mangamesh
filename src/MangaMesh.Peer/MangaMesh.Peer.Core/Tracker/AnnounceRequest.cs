@@ -8,8 +8,6 @@ namespace MangaMesh.Peer.Core.Tracker
 {
     public record AnnounceRequest(
       string NodeId,
-      string IP,
-      int Port,
       List<string> Manifests
   );
 }

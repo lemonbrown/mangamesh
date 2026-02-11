@@ -1,3 +1,4 @@
+using MangaMesh.Index.AdminApi.Services;
 using MangaMesh.Shared.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,17 +8,17 @@ namespace MangaMesh.Index.AdminApi.Controllers
     [Route("admin/dashboard")]
     public class DashboardController : ControllerBase
     {
-        private readonly INodeRegistry _nodeRegistry;
+        private readonly ITrackerService _trackerService;
 
-        public DashboardController(INodeRegistry nodeRegistry)
+        public DashboardController(ITrackerService trackerService)
         {
-            _nodeRegistry = nodeRegistry;
+            _trackerService = trackerService;
         }
 
         [HttpGet("stats")]
-        public IActionResult GetStats()
+        public async Task<IActionResult> GetStats()
         {
-            var nodes = _nodeRegistry.GetAllNodes();
+            var nodes = await _trackerService.GetAllNodesAsync();
             return Ok(new
             {
                 ActiveNodes = nodes.Count(n => (DateTime.UtcNow - n.LastSeen).TotalMinutes < 15), // "Online" definition
@@ -29,16 +30,14 @@ namespace MangaMesh.Index.AdminApi.Controllers
         }
 
         [HttpGet("nodes")]
-        public IActionResult GetNodes([FromQuery] string? filter)
+        public async Task<IActionResult> GetNodes([FromQuery] string? filter)
         {
-            var nodes = _nodeRegistry.GetAllNodes();
+            var nodes = await _trackerService.GetAllNodesAsync();
             // Map to UI model
             var result = nodes.Select(n => new
             {
                 id = n.NodeId,
                 type = "Peer", // Default
-                ip = n.IP,
-                port = n.Port,
                 lastSeen = n.LastSeen,
                 status = (DateTime.UtcNow - n.LastSeen).TotalMinutes < 15 ? "Online" : "Offline",
                 version = "1.0.0" 

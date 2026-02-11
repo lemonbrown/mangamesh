@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5243'; // Default to localhost:5243 (Index.Api)
+const API_BASE_URL = 'https://localhost:7043'; // Default to localhost:5176 (Index.Api)
 
 export const httpClient = axios.create({
     baseURL: API_BASE_URL,

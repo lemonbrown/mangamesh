@@ -72,9 +72,7 @@ namespace MangaMesh.Index.Api.Controllers
 
             var node = new TrackerNode()
             {
-                IP = request.IP,
                 NodeId = request.NodeId,
-                Port = request.Port,
                 Manifests = new HashSet<string>(request.Manifests),
                 ManifestSetHash = manifestSetHash,
                 ManifestCount = request.Manifests.Count
@@ -111,8 +109,6 @@ namespace MangaMesh.Index.Api.Controllers
 
             // Update simple stats
             node.LastSeen = DateTime.UtcNow;
-            node.IP = request.IP;
-            node.Port = request.Port;
 
             // Check if manifest set matches
             if (node.ManifestSetHash != request.ManifestSetHash ||
@@ -130,7 +126,7 @@ namespace MangaMesh.Index.Api.Controllers
         {
             // ... (existing logic) ...
             var peers = _nodeRegistry.GetPeersForManifest(hash)
-               .Select(n => new { n.NodeId, n.IP, n.Port })
+               .Select(n => new { n.NodeId })
                .ToList();
 
             return Results.Json(peers);
@@ -149,7 +145,7 @@ namespace MangaMesh.Index.Api.Controllers
 
             var peer = peers[Random.Shared.Next(peers.Count)];
 
-            return Results.Json(new { peer.NodeId, peer.IP, peer.Port });
+            return Results.Json(new { peer.NodeId });
         }
 
         [HttpPost("/api/announce/authorize")]
@@ -347,6 +343,13 @@ namespace MangaMesh.Index.Api.Controllers
             {
                 NodeCount = nodeCount
             });
+        }
+
+        [HttpGet("/tracker/nodes")]
+        public IResult GetNodes()
+        {
+            // Simple endpoint for Admin API to consume
+            return Results.Json(_nodeRegistry.GetAllNodes());
         }
     }
 }

@@ -41,7 +41,7 @@
              return Task.FromResult(new MangaMesh.Peer.Core.Tracker.TrackerStats());
         }
 
-        public Task<bool> PingAsync(string nodeId, string ip, int port, string manifestSetHash, int manifestCount)
+        public Task<bool> PingAsync(string nodeId, string manifestSetHash, int manifestCount)
         {
              return Task.FromResult(true);
         }

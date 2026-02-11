@@ -18,11 +18,11 @@ namespace MangaMesh.Peer.Core.Tracker
             _httpClient = http;
         }
 
-        public async Task<bool> PingAsync(string nodeId, string ip, int port, string manifestSetHash, int manifestCount)
+        public async Task<bool> PingAsync(string nodeId, string manifestSetHash, int manifestCount)
         {
             try
             {
-                var request = new PingRequest(nodeId, ip, port, manifestSetHash, manifestCount);
+                var request = new PingRequest(nodeId, manifestSetHash, manifestCount);
                 // POST /ping matches the implementation plan and controller expectation
                 var response = await _httpClient.PostAsJsonAsync("/ping", request);
 
@@ -72,7 +72,7 @@ namespace MangaMesh.Peer.Core.Tracker
         /// </summary>
         public async Task AnnounceAsync(Shared.Models.AnnounceRequest announcementRequest)
         {
-            var request = new AnnounceRequest(announcementRequest.NodeId, announcementRequest.IP, announcementRequest.Port, announcementRequest.Manifests);
+            var request = new AnnounceRequest(announcementRequest.NodeId, announcementRequest.Manifests);
             var response = await _httpClient.PostAsJsonAsync("/announce", request);
             response.EnsureSuccessStatusCode();
         }

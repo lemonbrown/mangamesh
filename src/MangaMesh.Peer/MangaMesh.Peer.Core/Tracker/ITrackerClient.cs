@@ -9,7 +9,7 @@ namespace MangaMesh.Peer.Core.Tracker
 {
     public interface ITrackerClient
     {
-        Task<bool> PingAsync(string nodeId, string ip, int port, string manifestSetHash, int manifestCount);
+        Task<bool> PingAsync(string nodeId, string manifestSetHash, int manifestCount);
         Task<List<PeerInfo>> GetPeersForManifestAsync(string manifestHash);
         Task<PeerInfo?> GetPeerAsync(string seriesId, string chapterId, string manifestHash);
 
