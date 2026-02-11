@@ -1,14 +1,24 @@
-﻿using MangaMesh.Peer.Core.Helpers;
+﻿using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Chapters;
+using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Helpers;
 using MangaMesh.Peer.Core.Keys;
+using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Node;
+using MangaMesh.Peer.Core.Storage;
+using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Peer.Core.Transport;
+using MangaMesh.Shared.Models;
+using MangaMesh.Shared.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
+using System.Text.Json;
 
 namespace MangaMesh.Peer.Dht.TestHarness
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             Console.WriteLine("MangaMesh DHT Test Harness");
             Console.WriteLine("Commands:");
@@ -19,9 +29,67 @@ namespace MangaMesh.Peer.Dht.TestHarness
             Console.WriteLine("  find <port> <target_port>        - Find node <target_port>'s ID from <port>");
             Console.WriteLine("  list                             - List active nodes");
             Console.WriteLine("  info <port>                      - Show node info");
+            Console.WriteLine("  upload <path> <series_name> <chapter_number> [scan_group] - Upload chapter to Index");
+            Console.WriteLine("  set-key <public_base64> <private_base64> - Set publisher identity keys");
+            Console.WriteLine("  show-key                         - Show publisher identity keys");
             Console.WriteLine("  quit                             - Exit");
 
             var manager = new NodeManager();
+
+            // Setup services for Upload
+            var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+            var blobDir = Path.Combine(dataDir, "blobs");
+            var manifestDir = Path.Combine(dataDir, "manifests");
+
+            Directory.CreateDirectory(blobDir);
+            Directory.CreateDirectory(manifestDir);
+
+            var manifestStore = new ManifestStore(manifestDir);
+            var storageMonitor = new StorageMonitorService(blobDir, manifestStore);
+            var blobStore = new BlobStore(blobDir, storageMonitor);
+            var chunkIngester = new ChunkIngester(blobStore);
+
+            // Use persistent key store for Publisher Identity
+            var keyPath = Path.Combine(dataDir, "publisher_keys.json");
+            Console.WriteLine($"Publisher Keys Path: {keyPath}");
+
+            var keyStore = new FileKeyStore(keyPath);
+            var keyPairService = new KeyPairService(keyStore);
+
+            // Create a consistent identity for the harness publisher
+            var harnessIdentity = new SimpleNodeIdentity();
+
+            // Setup Tracker Client (Index API)
+            // Assuming Index API is running on localhost:5176 based on previous session, or 5243 default
+            var trackerHttp = new HttpClient { BaseAddress = new Uri("http://localhost:5176") };
+            var trackerClient = new TrackerClient(trackerHttp);
+
+            var importService = new ImportChapterService(
+                blobStore,
+                manifestStore,
+                trackerClient,
+                keyStore,
+                harnessIdentity,
+                keyPairService,
+                chunkIngester
+            );
+
+            // Initialize keys for signing
+            var keys = await keyStore.GetAsync();
+            if (keys == null)
+            {
+                var newKeys = await keyPairService.GenerateKeyPairBase64Async();
+                Console.WriteLine($"Initialized new Publisher Keys. Public Key: {newKeys.PublicKeyBase64}");
+            }
+            else
+            {
+                Console.WriteLine($"Loaded Publisher Keys. Public Key: {keys.PublicKeyBase64}");
+            }
+
+            // Setup local MangaDex provider for search (since Index doesn't support searching external yet)
+            var mdHttp = new HttpClient { BaseAddress = new Uri("https://api.mangadex.org") };
+            mdHttp.DefaultRequestHeaders.UserAgent.ParseAdd("MangaMesh-TestHarness/1.0");
+            var mdProvider = new MangaDexMetadataProvider(mdHttp, "lemonbrown", "QGBq2Wi2JDrHfKR");
 
             while (true)
             {
@@ -29,7 +97,9 @@ namespace MangaMesh.Peer.Dht.TestHarness
                 var line = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                var parts = line.Split(' ');
+                var parts = ParseCommand(line);
+                if (parts.Count == 0) continue;
+
                 var cmd = parts[0].ToLower();
 
                 try
@@ -59,6 +129,40 @@ namespace MangaMesh.Peer.Dht.TestHarness
                         case "info":
                             manager.Info(int.Parse(parts[1]));
                             break;
+                        case "upload":
+                            if (parts.Count < 4)
+                            {
+                                Console.WriteLine("Usage: upload <path> <series_name> <chapter_number> [scan_group]");
+                                break;
+                            }
+                            var path = parts[1];
+                            var seriesName = parts[2];
+                            var chapterNum = double.Parse(parts[3]);
+                            var scanGroup = parts.Count > 4 ? parts[4] : "TestGroup";
+
+                            await HandleUpload(importService, mdProvider, trackerClient, harnessIdentity, path, seriesName, chapterNum, scanGroup);
+                            break;
+                        case "set-key":
+                            if (parts.Count < 3)
+                            {
+                                Console.WriteLine("Usage: set-key <public_base64> <private_base64>");
+                                break;
+                            }
+                            await keyStore.SaveAsync(parts[1], parts[2]);
+                            Console.WriteLine("Keys saved. Please restart the application for changes to take effect.");
+                            break;
+                        case "show-key":
+                            var currentKeys = await keyStore.GetAsync();
+                            if (currentKeys == null)
+                            {
+                                Console.WriteLine("No keys set.");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Public Key: {currentKeys.PublicKeyBase64}");
+                                Console.WriteLine($"Private Key: {currentKeys.PrivateKeyBase64}");
+                            }
+                            break;
                         default:
                             Console.WriteLine("Unknown command");
                             break;
@@ -67,8 +171,96 @@ namespace MangaMesh.Peer.Dht.TestHarness
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error: {ex.Message}");
+                    if (ex.InnerException != null) Console.WriteLine($"Inner: {ex.InnerException.Message}");
                 }
             }
+        }
+
+        private static List<string> ParseCommand(string line)
+        {
+            var parts = new List<string>();
+            var currentPart = new System.Text.StringBuilder();
+            bool inQuotes = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (c == '"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                else if (c == ' ' && !inQuotes)
+                {
+                    if (currentPart.Length > 0)
+                    {
+                        parts.Add(currentPart.ToString());
+                        currentPart.Clear();
+                    }
+                }
+                else
+                {
+                    currentPart.Append(c);
+                }
+            }
+
+            if (currentPart.Length > 0)
+            {
+                parts.Add(currentPart.ToString());
+            }
+
+            return parts;
+        }
+
+        private static async Task HandleUpload(
+            ImportChapterService importService,
+            MangaDexMetadataProvider metadataProvider,
+            ITrackerClient trackerClient,
+            INodeIdentityService nodeIdentity,
+            string path,
+            string seriesName,
+            double chapterNumber,
+            string scanGroup)
+        {
+            // Ensure node is registered
+            Console.WriteLine("Checking if node is registered with Tracker...");
+            if (!await trackerClient.CheckNodeExistsAsync(nodeIdentity.NodeId))
+            {
+                Console.WriteLine($"Node {nodeIdentity.NodeId} not found on Tracker. Registering...");
+                await trackerClient.AnnounceAsync(new Shared.Models.AnnounceRequest(nodeIdentity.NodeId, new List<string>()));
+                Console.WriteLine("Node registered successfully.");
+            }
+
+            Console.WriteLine($"Searching for series '{seriesName}' on MangaDex...");
+            var results = await metadataProvider.SearchMangaAsync(seriesName);
+            var match = results.FirstOrDefault(); // Simple "First match" logic
+
+            if (match == null)
+            {
+                Console.WriteLine("No series found with that name.");
+                return;
+            }
+
+            Console.WriteLine($"Found Series: {match.Title} (ID: {match.ExternalMangaId}, Source: {match.Source})");
+
+            var request = new ImportChapterRequest
+            {
+                SourceDirectory = path,
+                ExternalMangaId = match.ExternalMangaId,
+                Source = match.Source,
+                ChapterNumber = chapterNumber,
+                DisplayName = "", // Auto-generate
+                Language = "en",
+                ReleaseType = ReleaseType.VerifiedScanlation,
+                ScanlatorId = scanGroup
+            };
+
+            Console.WriteLine("Starting import...");
+            var result = await importService.ImportAsync(request);
+            Console.WriteLine($"Import Complete!");
+            Console.WriteLine($"Manifest Hash: {result.ManifestHash}");
+            Console.WriteLine($"File Count: {result.FileCount}");
+            Console.WriteLine($"Already Existed: {result.AlreadyExists}");
         }
     }
 
@@ -88,13 +280,13 @@ namespace MangaMesh.Peer.Dht.TestHarness
             var storage = new InMemoryDhtStorage();
             var keyStore = new InMemoryKeyStore();
             var keyPairService = new KeyPairService(keyStore);
-            
+
             var identity = new NodeIdentity(keyPairService);
             var transport = new TcpTransport(port);
-            
+
             var tracker = new TrackerMock();
             var connectionInfo = new ConsoleNodeConnectionInfoProvider();
-            
+
             var node = new DhtNode(identity, transport, storage, keyPairService, keyStore, tracker, connectionInfo);
 
             // Wiring for Protocol Multiplexing
@@ -117,14 +309,14 @@ namespace MangaMesh.Peer.Dht.TestHarness
                 Console.WriteLine($"Node {port} not found. Start it first.");
                 return;
             }
-            
+
             var entry = new RoutingEntry
             {
                 Address = new NodeAddress(host, remotePort)
             };
 
             Console.WriteLine($"Bootstrapping {port} -> {host}:{remotePort}...");
-            try 
+            try
             {
                 node.BootstrapAsync(new[] { entry }).Wait();
                 Console.WriteLine("Bootstrap initiated.");
@@ -163,14 +355,14 @@ namespace MangaMesh.Peer.Dht.TestHarness
                 return;
             }
             var hash = Crypto.Sha256(System.Text.Encoding.UTF8.GetBytes(value));
-             Console.WriteLine($"Searching for hash {Convert.ToHexString(hash)}...");
+            Console.WriteLine($"Searching for hash {Convert.ToHexString(hash)}...");
             try
             {
                 var result = node.FindValueAsync(hash).Result;
                 Console.WriteLine($"Found {result.Count} providers.");
-                foreach(var r in result)
+                foreach (var r in result)
                 {
-                     Console.WriteLine($"- {Convert.ToHexString(r)}");
+                    Console.WriteLine($"- {Convert.ToHexString(r)}");
                 }
             }
             catch (Exception ex)
@@ -181,28 +373,28 @@ namespace MangaMesh.Peer.Dht.TestHarness
 
         public void Find(int port, int targetPort)
         {
-             if (!_nodes.TryGetValue(port, out var node)) return;
-             if (!_nodes.TryGetValue(targetPort, out var targetNode)) 
-             {
-                 Console.WriteLine("Target node not found locally to get ID.");
-                 return;
-             }
+            if (!_nodes.TryGetValue(port, out var node)) return;
+            if (!_nodes.TryGetValue(targetPort, out var targetNode))
+            {
+                Console.WriteLine("Target node not found locally to get ID.");
+                return;
+            }
 
-             var targetId = targetNode.Identity.NodeId;
-             Console.WriteLine($"Looking for node {Convert.ToHexString(targetId)} from {port}...");
-             try
-             {
-                 var result = node.FindNodeAsync(targetId).Result;
-                 Console.WriteLine($"Found {result.Count} closest nodes.");
-                 foreach (var n in result)
-                 {
-                     Console.WriteLine($"- {n.Address.Host}:{n.Address.Port} ({Convert.ToHexString(n.NodeId)})");
-                 }
-             }
-             catch (Exception ex)
-             {
-                 Console.WriteLine($"Find failed: {ex.InnerException?.Message ?? ex.Message}");
-             }
+            var targetId = targetNode.Identity.NodeId;
+            Console.WriteLine($"Looking for node {Convert.ToHexString(targetId)} from {port}...");
+            try
+            {
+                var result = node.FindNodeAsync(targetId).Result;
+                Console.WriteLine($"Found {result.Count} closest nodes.");
+                foreach (var n in result)
+                {
+                    Console.WriteLine($"- {n.Address.Host}:{n.Address.Port} ({Convert.ToHexString(n.NodeId)})");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Find failed: {ex.InnerException?.Message ?? ex.Message}");
+            }
         }
 
         public void ListNodes()
@@ -223,17 +415,37 @@ namespace MangaMesh.Peer.Dht.TestHarness
             Console.WriteLine($"Node {port}");
             Console.WriteLine($"ID: {Convert.ToHexString(node.Identity.NodeId)}");
             int count = 0;
-            foreach(var b in node.RoutingTable) count += b.Entries.Count;
+            foreach (var b in node.RoutingTable) count += b.Entries.Count;
             Console.WriteLine($"Routing Table Size: {count} peers");
-            foreach(var b in node.RoutingTable)
+            foreach (var b in node.RoutingTable)
             {
-                foreach(var e in b.Entries)
+                foreach (var e in b.Entries)
                 {
                     Console.WriteLine($" - {e.Address.Host}:{e.Address.Port}");
                 }
             }
         }
 
+    }
+
+    public class FileKeyStore : IKeyStore
+    {
+        private readonly string _path;
+        public FileKeyStore(string path) => _path = path;
+
+        public async Task<PublicPrivateKeyPair?> GetAsync()
+        {
+            if (!File.Exists(_path)) return null;
+            var json = await File.ReadAllTextAsync(_path);
+            return JsonSerializer.Deserialize<PublicPrivateKeyPair>(json);
+        }
+
+        public async Task SaveAsync(string pub, string priv)
+        {
+            var pair = new PublicPrivateKeyPair { PublicKeyBase64 = pub, PrivateKeyBase64 = priv };
+            var json = JsonSerializer.Serialize(pair);
+            await File.WriteAllTextAsync(_path, json);
+        }
     }
 
     public class InMemoryKeyStore : IKeyStore
@@ -253,6 +465,21 @@ namespace MangaMesh.Peer.Dht.TestHarness
                 PrivateKeyBase64 = privateKeyBase64
             };
             return Task.CompletedTask;
+        }
+    }
+
+    public class SimpleNodeIdentity : INodeIdentityService
+    {
+        public string NodeId { get; } = Guid.NewGuid().ToString("N");
+
+        public bool IsConnected { get; private set; } = true;
+
+        public DateTime? LastPingUtc { get; private set; } = DateTime.UtcNow;
+
+        public void UpdateStatus(bool isConnected)
+        {
+            IsConnected = isConnected;
+            if (isConnected) LastPingUtc = DateTime.UtcNow;
         }
     }
 }

@@ -1,4 +1,5 @@
 using MangaMesh.Shared.Services;
+using MangaMesh.Index.Api.Services;
 using System.Security.Cryptography;
 using MangaMesh.Shared.Models;
 using MangaMesh.Shared.Stores;
@@ -12,11 +13,12 @@ namespace MangaMesh.Index.Api.Controllers
     {
         private readonly ILogger<TrackerController> _logger;
         private readonly INodeRegistry _nodeRegistry;
+        private readonly ICoverService _coverService;
         private readonly IManifestEntryStore _manifestEntryStore;
         private readonly IMangaMetadataProvider _metadataProvider;
         private readonly ISeriesRegistry _seriesRegistry;
         private readonly IApprovedKeyStore _approvedKeyStore;
-        private readonly IManifestAuthorizationService _authService;
+        private readonly MangaMesh.Shared.Services.IManifestAuthorizationService _authService;
         private readonly IPublicKeyRegistry _keyRegistry; // Need this for manual verification if not injected yet. Check constructor. 
         // Actually PublicKeyRegistry isn't injected yet. Let's check constructor params.
 
@@ -27,8 +29,11 @@ namespace MangaMesh.Index.Api.Controllers
             IMangaMetadataProvider metadataProvider,
             ISeriesRegistry seriesRegistry,
             IApprovedKeyStore approvedKeyStore,
-            IManifestAuthorizationService authService,
-            IPublicKeyRegistry keyRegistry)
+
+
+            MangaMesh.Shared.Services.IManifestAuthorizationService authService,
+            IPublicKeyRegistry keyRegistry,
+            ICoverService coverService)
         {
             _logger = logger;
             _nodeRegistry = nodeRegistry;
@@ -38,6 +43,7 @@ namespace MangaMesh.Index.Api.Controllers
             _approvedKeyStore = approvedKeyStore;
             _authService = authService;
             _keyRegistry = keyRegistry;
+            _coverService = coverService;
         }
 
         [HttpGet("/api/keys/{publicKeyBase64}/allowed")]
@@ -148,6 +154,8 @@ namespace MangaMesh.Index.Api.Controllers
             return Results.Json(new { peer.NodeId });
         }
 
+
+
         [HttpPost("/api/announce/authorize")]
         public async Task<IResult> AuthorizeManifest([FromBody] AuthorizeManifestRequest request)
         {
@@ -185,26 +193,6 @@ namespace MangaMesh.Index.Api.Controllers
             {
                 return Results.Unauthorized();
             }
-
-            // Check if key is approved (Double check, though they theoretically couldn't have gotten a signature if not approved? 
-            // Actually, we haven't enforced "Only approve keys can get challenges/signatures" in KeysController. 
-            // We should enforce it here or there. The prompt said: "This route checks the store...". 
-            // The prompt implied the auth flow handles the "import permission". 
-            // Let's enforce it here to be safe: The key associated with the session must be approved.
-            // But wait, IsSessionValidAsync takes signature. We assume the session implies the key is valid.
-            // However, keys can be revoked *after* session creation.
-            // So we should verify the key is still approved.
-            // We need to know WHICH key signed this. Ideally IsSessionValidAsync returns the key, or we trust request.PublicKey if it matches the session.
-            // For now, let's proceed with just session check as "Proof of Identity" and then check if that Identity is "Approved".
-            // But verify request.PublicKey matches the one in the session?
-            // SqliteAuthSessionStore doesn't expose the key on validation. 
-            // We'll trust the session for now. Better yet, we should enforce that ONLY approved keys can CreateChallenge.
-
-            // MARK USED IMMEDIATELY or defer?
-            // "Once processed, flag... and no longer usable".
-            // We'll mark it used at the end of success, or if we reject it for logic reasons.
-            // To prevent replay attacks during processing, we ideally mark it pending?
-            // For simplicity/requirement matching: Mark used after manifest processing.
 
             var node = _nodeRegistry.GetNode(request.NodeId);
             if (node == null)
@@ -320,6 +308,16 @@ namespace MangaMesh.Index.Api.Controllers
 
             await _manifestEntryStore.AddAsync(entry);
             _nodeRegistry.AddManifestToNode(request.NodeId, request.ManifestHash.Value);
+
+            _nodeRegistry.AddManifestToNode(request.NodeId, request.ManifestHash.Value);
+
+            // 5. Ensure cover is cached (Fire-and-forget or awaited? Awaited for now to ensure consistency, but logging inside handles errors)
+            // We pass ExternalMangaId if available, or we might need to look it up from series registry if not passed?
+            // Request has ExternalMangaId.
+            if (!string.IsNullOrEmpty(request.ExternalMangaId))
+            {
+                await _coverService.EnsureCoverCachedAsync(request.ExternalMangaId);
+            }
 
             return Results.Ok();
         }

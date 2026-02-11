@@ -10,5 +10,6 @@
 
         public string? Status { get; init; }
         public int? Year { get; init; }
+        public string? CoverFilename { get; init; }
     }
 }

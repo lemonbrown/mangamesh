@@ -26,10 +26,21 @@ public class GatewayService
 
     public async Task<ManifestData?> GetManifestAsync(string contentHash)
     {
-        // 1. Check Cache
+        var result = await GetManifestWithNodesAsync(contentHash);
+        return result.Manifest;
+    }
+
+    public async Task<(ManifestData? Manifest, List<string> NodeAddresses)> GetManifestWithNodesAsync(string contentHash)
+    {
+        var nodeAddresses = new List<string>();
+
+        // 1. Check Cache for Manifest
         if (_cache.TryGetValue($"manifest:{contentHash}", out ManifestData? cached))
         {
-            return cached;
+            // Even if cached, we might want to refresh providers?
+            // For now, if cached, we might check DHT for providers only if we need them.
+            // But this method implies we want nodes.
+            // Let's proceed to DHT lookup for providers regardless, but skip manifest fetch if cached.
         }
 
         var hashBytes = Encoding.UTF8.GetBytes(contentHash);
@@ -37,21 +48,33 @@ public class GatewayService
         // 2. DHT Lookup for providers
         var providers = await _dhtNode.FindValueWithAddressAsync(hashBytes);
         _logger.LogInformation($"[Gateway] Found {providers.Count} providers for hash {contentHash}");
-        
+
+        foreach (var p in providers)
+        {
+            var addr = $"{p.Address.Host}:{p.Address.Port}";
+            if (!nodeAddresses.Contains(addr))
+            {
+                nodeAddresses.Add(addr);
+            }
+        }
+
+        if (cached != null)
+        {
+            return (cached, nodeAddresses);
+        }
+
+        // 3. If not cached, fetch manifest from one of the providers
         foreach (var provider in providers)
         {
             try
             {
-                // 3. Request Manifest
                 var request = new GetManifest { ContentHash = contentHash };
-                // Timeout of 5 seconds for gateway responsiveness
                 var response = await _dhtNode.SendContentRequestAsync(provider.Address, request, TimeSpan.FromSeconds(5));
 
                 if (response is ManifestData data)
                 {
-                    // 4. Cache and Return
-                    _cache.Set($"manifest:{contentHash}", data, TimeSpan.FromMinutes(30)); 
-                    return data;
+                    _cache.Set($"manifest:{contentHash}", data, TimeSpan.FromMinutes(30));
+                    return (data, nodeAddresses);
                 }
             }
             catch (Exception ex)
@@ -60,7 +83,7 @@ public class GatewayService
             }
         }
 
-        return null;
+        return (null, nodeAddresses);
     }
 
     public async Task<byte[]?> GetBlobAsync(string hash)
@@ -81,37 +104,37 @@ public class GatewayService
 
         // 2. DHT Lookup
         var hashBytes = Encoding.UTF8.GetBytes(hash); // Note: DHT might key by Base64 or specific encoding. 
-                                                     // DhtNode.StoreAsync uses Key=Hash. 
-                                                     // Check if DhtNode FindValue expects same. 
-                                                     // InMemoryDhtStorage uses Convert.ToBase64String(hash). 
-                                                     // But hash passed here is Hex String. 
-                                                     // We need to clarify DHT keying.
-                                                     // Current implementation: StoreAsync takes byte[]. 
-                                                     // GatewayIntegrationTests used: await _peerNode.StoreAsync(Encoding.UTF8.GetBytes("test-hash"));
-                                                     // The hash string itself was treated as bytes of the key.
-                                                     // For Content Addressing, the Key IS the blob hash (bytes).
-                                                     // So we should Convert Hex to Bytes.
-        
+                                                      // DhtNode.StoreAsync uses Key=Hash. 
+                                                      // Check if DhtNode FindValue expects same. 
+                                                      // InMemoryDhtStorage uses Convert.ToBase64String(hash). 
+                                                      // But hash passed here is Hex String. 
+                                                      // We need to clarify DHT keying.
+                                                      // Current implementation: StoreAsync takes byte[]. 
+                                                      // GatewayIntegrationTests used: await _peerNode.StoreAsync(Encoding.UTF8.GetBytes("test-hash"));
+                                                      // The hash string itself was treated as bytes of the key.
+                                                      // For Content Addressing, the Key IS the blob hash (bytes).
+                                                      // So we should Convert Hex to Bytes.
+
         byte[] dhtKey;
-        try 
-        { 
-            dhtKey = Convert.FromHexString(hash); 
-        } 
-        catch 
-        { 
+        try
+        {
+            dhtKey = Convert.FromHexString(hash);
+        }
+        catch
+        {
             // Fallback if hash is not hex (e.g. legacy test hash)
-            dhtKey = Encoding.UTF8.GetBytes(hash); 
+            dhtKey = Encoding.UTF8.GetBytes(hash);
         }
 
         var providers = await _dhtNode.FindValueWithAddressAsync(dhtKey);
-        
+
         foreach (var provider in providers)
         {
             try
             {
                 var request = new GetBlob { BlobHash = hash };
                 var response = await _dhtNode.SendContentRequestAsync(provider.Address, request, TimeSpan.FromSeconds(10));
-                
+
                 if (response is BlobData data)
                 {
                     // 3. Verify Integrity
@@ -162,13 +185,13 @@ public class GatewayService
             // 3. Fetch chunks
             // Sequential for now to be safe, easy to parallelize later
             // Or use Parallel.ForEachAsync if careful with index
-            
+
             // We need to calculate offsets. Chunks are fixed size except last.
             int offset = 0;
             foreach (var chunkHash in manifest.Chunks)
             {
                 var chunkData = await GetBlobAsync(chunkHash);
-                if (chunkData == null) 
+                if (chunkData == null)
                     throw new Exception($"Missing chunk {chunkHash} for page {pageHash}");
 
                 if (offset + chunkData.Length > fileData.Length)

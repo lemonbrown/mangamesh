@@ -1,5 +1,5 @@
 {
-  "ManifestHash": "060b38cf7def2f5623f071609f8295efd2e1efe9734508ff867a342f5fff94d5",
+  "ManifestHash": "ManifestHash { Value = 83c14b35701fd888aa13011f3721a0fa6790060e84f2ca86a7b56d1e101c0da2 }",
   "ExternalMetadataSource": "MangaDex",
   "ExteralMetadataMangaId": "a1c7c817-4e59-43b7-9365-09675a149a6f",
   "Title": "Romance Dawn",
@@ -8,8 +8,8 @@
   "ChapterNumber": 1,
   "Volume": null,
   "Language": "en",
-  "ScanGroup": "tcb",
+  "ScanGroup": "TestGroup",
   "Quality": null,
-  "AnnouncedUtc": "2026-02-06T17:32:41.9808344Z",
-  "LastSeenUtc": "2026-02-06T17:32:54.4706047Z"
+  "AnnouncedUtc": "2026-02-11T20:38:11.6848806Z",
+  "LastSeenUtc": "2026-02-11T20:38:13.9085276Z"
 }

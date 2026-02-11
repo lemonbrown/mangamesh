@@ -11,5 +11,6 @@
         public string? Description { get; init; }
         public string? Status { get; init; }   // ongoing, completed, hiatus
         public IReadOnlyList<string> Authors { get; init; } = Array.Empty<string>();
+        public string? CoverFilename { get; init; }
     }
 }

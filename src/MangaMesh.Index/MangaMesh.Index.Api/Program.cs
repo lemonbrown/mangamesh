@@ -1,6 +1,7 @@
 using MangaMesh.Shared.Data;
 using MangaMesh.Shared.Data.Entities;
 using MangaMesh.Shared.Models;
+using MangaMesh.Index.Api.Services;
 using MangaMesh.Shared.Services;
 using MangaMesh.Shared.Stores;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
 
 builder.Services.AddControllers()
     .AddApplicationPart(typeof(MangaMesh.Index.AdminApi.Controllers.DashboardController).Assembly);
@@ -57,12 +59,15 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<IndexDbContext>(options =>
     options.UseSqlite($"Data Source={AppContext.BaseDirectory}data\\tracker.db"));
 
+
+builder.Services.AddScoped<ICoverService, CoverService>();
+
 builder.Services
     .AddScoped<IPublicKeyRegistry, PublicKeyRegistry>()
     .AddScoped<IPublicKeyStore, SqlitePublicKeyStore>()
     .AddScoped<IChallengeStore, SqliteChallengeStore>()
     .AddScoped<IApprovedKeyStore, SqliteApprovedKeyStore>()
-    .AddSingleton<IManifestAuthorizationService, ManifestAuthorizationService>()
+    .AddSingleton<MangaMesh.Shared.Services.IManifestAuthorizationService, MangaMesh.Shared.Services.ManifestAuthorizationService>()
 
     //.AddSingleton<ISeriesStore>(new JsonSeriesStore())
     .AddSingleton<INodeRegistry, NodeRegistry>();
@@ -79,6 +84,18 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseCors("AllowAll");
+
+app.UseHttpsRedirection();
+
+app.UseCors("AllowAll");
+
+var coversPath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "covers");
+if (!Directory.Exists(coversPath))
+{
+    Directory.CreateDirectory(coversPath);
+}
+
+app.UseStaticFiles(); // Default to wwwroot
 
 app.UseAuthorization();
 

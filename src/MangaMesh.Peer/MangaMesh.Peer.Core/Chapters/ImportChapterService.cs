@@ -8,6 +8,7 @@ using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Peer.Core.Node;
 using MangaMesh.Shared.Models;
+using System.IO.Compression;
 
 namespace MangaMesh.Peer.Core.Chapters
 {
@@ -41,41 +42,93 @@ namespace MangaMesh.Peer.Core.Chapters
 
         public async Task<ImportChapterResult> ImportAsync(ImportChapterRequest request, CancellationToken ct = default)
         {
-            if (!Directory.Exists(request.SourceDirectory))
-                throw new DirectoryNotFoundException($"Source path not found: {request.SourceDirectory}");
-
-            // Step 1: enumerate files
-            var files = Directory.GetFiles(request.SourceDirectory)
-                .Where(f => IsImageFile(f))
-                .OrderBy(f => f)
-                .ToArray();
-
-            if (files.Length == 0)
-                throw new InvalidOperationException("No valid image files found in source folder.");
-
-            // Step 2: Ingest chunks and create page manifests
+            List<Shared.Models.ChapterFileEntry> entries = new();
             var pageManifestHashes = new List<BlobHash>();
-            var entries = new List<Shared.Models.ChapterFileEntry>();
-
             long totalSize = 0;
 
-            foreach (var file in files)
+            if (Directory.Exists(request.SourceDirectory))
             {
-                using var stream = File.OpenRead(file);
-                var mimeType = GetMimeType(file);
+                // Directory mode
+                var files = Directory.GetFiles(request.SourceDirectory)
+                    .Where(f => IsImageFile(f))
+                    .OrderBy(f => f)
+                    .ToArray();
 
-                // ChunkIngester splits the file, stores chunks, creates PageManifest, stores PageManifest
-                var (pageManifest, pageHash) = await _chunkIngester.IngestAsync(stream, mimeType);
+                if (files.Length == 0)
+                    throw new InvalidOperationException("No valid image files found in source folder.");
 
-                pageManifestHashes.Add(new BlobHash(pageHash));
-                totalSize += pageManifest.FileSize;
-
-                entries.Add(new Shared.Models.ChapterFileEntry
+                foreach (var file in files)
                 {
-                    Hash = pageHash, // This is now the hash of the PageManifest
-                    Path = Path.GetFileName(file),
-                    Size = pageManifest.FileSize
-                });
+                    using var stream = File.OpenRead(file);
+                    var mimeType = GetMimeType(file);
+
+                    // ChunkIngester splits the file, stores chunks, creates PageManifest, stores PageManifest
+                    var (pageManifest, pageHash) = await _chunkIngester.IngestAsync(stream, mimeType);
+
+                    pageManifestHashes.Add(new BlobHash(pageHash));
+                    totalSize += pageManifest.FileSize;
+
+                    entries.Add(new Shared.Models.ChapterFileEntry
+                    {
+                        Hash = pageHash, // This is now the hash of the PageManifest
+                        Path = Path.GetFileName(file),
+                        Size = pageManifest.FileSize
+                    });
+                }
+            }
+            else if (File.Exists(request.SourceDirectory))
+            {
+                var ext = Path.GetExtension(request.SourceDirectory).ToLowerInvariant();
+                if (ext == ".zip" || ext == ".cbz")
+                {
+                    // Zip mode
+                    using var stream = File.OpenRead(request.SourceDirectory);
+                    using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+
+                    var zipEntries = archive.Entries
+                        .Where(e => IsImageFile(e.FullName) && e.Length > 0)
+                        .OrderBy(e => e.FullName)
+                        .ToArray();
+
+                    if (zipEntries.Length == 0)
+                        throw new InvalidOperationException("No valid image files found in zip archive.");
+
+                    foreach (var entry in zipEntries)
+                    {
+                        using var entryStream = entry.Open();
+                        // We need to copy to a memory stream or let ChunkIngester handle non-seekable if it supports it.
+                        // ChunkIngester likely needs seekable stream if it does chunking strategies, but let's check.
+                        // Assuming ChunkIngester handles it, or we copy to MemoryStream. 
+                        // To be safe and since pages are usually small, let's copy to MemoryStream if needed.
+                        // Actually, standard ZipArchive entries are not seekable.
+                        using var memStream = new MemoryStream();
+                        await entryStream.CopyToAsync(memStream);
+                        memStream.Position = 0;
+
+                        var mimeType = GetMimeType(entry.Name);
+                        var (pageManifest, pageHash) = await _chunkIngester.IngestAsync(memStream, mimeType);
+
+                        pageManifestHashes.Add(new BlobHash(pageHash));
+                        totalSize += pageManifest.FileSize;
+
+                        entries.Add(new Shared.Models.ChapterFileEntry
+                        {
+                            Hash = pageHash,
+                            Path = entry.Name, // Use simple name or full path? standard usually flat or relative. 
+                                               // Let's use entry.Name (filename) to flatten, or entry.FullName if we want to preserve structure (but web readers often prefer flat).
+                                               // Let's use Name for now.
+                            Size = pageManifest.FileSize
+                        });
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException("Unsupported file type. Please provide a Directory, .zip, or .cbz file.");
+                }
+            }
+            else
+            {
+                throw new DirectoryNotFoundException($"Source path not found: {request.SourceDirectory}");
             }
 
             // Step 2.1: Register Series to get authoritative ID and Title
@@ -146,13 +199,13 @@ namespace MangaMesh.Peer.Core.Chapters
                     SchemaVersion = chapterManifest.SchemaVersion,
                     SeriesId = chapterManifest.SeriesId,
                     ChapterNumber = chapterManifest.ChapterNumber,
-                    Language = chapterManifest.Language,                    
+                    Language = chapterManifest.Language,
                     ReleaseType = request.ReleaseType,
                     Source = request.Source,
                     ExternalMangaId = request.ExternalMangaId,
 
                     // Added fields for verification
-                    ChapterId = chapterManifest.ChapterId,                    
+                    ChapterId = chapterManifest.ChapterId,
                     Title = chapterManifest.Title,
                     ScanGroup = chapterManifest.ScanGroup,
                     TotalSize = chapterManifest.TotalSize,
@@ -180,7 +233,7 @@ namespace MangaMesh.Peer.Core.Chapters
             return new ImportChapterResult
             {
                 ManifestHash = hash,
-                FileCount = files.Length,
+                FileCount = entries.Count,
                 AlreadyExists = isManifestExisting
             };
         }
@@ -213,7 +266,7 @@ namespace MangaMesh.Peer.Core.Chapters
                 SchemaVersion = manifest.SchemaVersion,
                 SeriesId = manifest.SeriesId,
                 ChapterNumber = manifest.ChapterNumber,
-                Language = manifest.Language,                
+                Language = manifest.Language,
                 ReleaseType = ReleaseType.VerifiedScanlation, // Assuming VerifiedScanlation for signed manifests
 
                 // Verification fields

@@ -31,6 +31,11 @@ namespace MangaMesh.Shared.Services
 
         private async Task EnsureAuthenticatedAsync()
         {
+            if (string.IsNullOrEmpty(_username) || string.IsNullOrEmpty(_password))
+            {
+                return;
+            }
+
             if (!string.IsNullOrEmpty(_sessionToken) && DateTime.UtcNow < _tokenExpiry)
             {
                 return;
@@ -46,19 +51,7 @@ namespace MangaMesh.Shared.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<LoginResponse>(); // This might wrap inside 'token' property based on model?
-                                                                                            // Wait, LoginResponse model: { token: { session: "..." } } matches likely structure?
-                                                                                            // Actually standard response is { result: "ok", token: { session: "", refresh: "" } }
-                                                                                            // My LoginResponse class defined earlier: 
-                                                                                            // public class LoginResponse { [JsonPropertyName("token")] public TokenData Token { get; set; } }
-                                                                                            // But wait, standard response wraps in `result`? 
-                                                                                            // Let's check docs or assume standard wrapper not present for auth?
-                                                                                            // Docs: POST /auth/login -> 200 OK -> { "result": "ok", "token": { "session": "...", "refresh": "..." } }
-                                                                                            // My LoginResponse definition assumes root object has 'token'. 
-                                                                                            // However, `MangaDexResponse<T>` has `Result`, `Response`, `Data`.
-                                                                                            // Auth might be different. 
-                                                                                            // I will read as JsonElement first to be safe or use `LoginResponse` directly if I trust my model.
-                                                                                            // My `LoginResponse` matches the structure `{ token: ... }`. It ignores `result` field unless I add it.
+                    var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
 
                     if (result?.Token != null)
                     {
@@ -97,7 +90,10 @@ namespace MangaMesh.Shared.Services
                     Title = m.Attributes.Title.Values.FirstOrDefault() ?? "Unknown Title",
                     AltTitles = m.Attributes.AltTitles.SelectMany(d => d.Values).ToList(),
                     Status = m.Attributes.Status,
-                    Year = m.Attributes.Year
+                    Year = m.Attributes.Year,
+                    CoverFilename = GetStringAttribute(m.Relationships
+                        .FirstOrDefault(r => r.Type == "cover_art")?
+                        .Attributes, "fileName")
                 }).ToList();
             }
             catch (Exception ex)
@@ -112,7 +108,7 @@ namespace MangaMesh.Shared.Services
             await EnsureAuthenticatedAsync();
             try
             {
-                var response = await _httpClient.GetFromJsonAsync<MangaDexResponse<MangaData>>($"manga/{externalMangaId}");
+                var response = await _httpClient.GetFromJsonAsync<MangaDexResponse<MangaData>>($"manga/{externalMangaId}?includes[]=cover_art");
                 if (response?.Data == null) return null;
 
                 var m = response.Data;
@@ -125,6 +121,9 @@ namespace MangaMesh.Shared.Services
                     Status = m.Attributes.Status,
                     Description = m.Attributes.Description.Values.FirstOrDefault(),
                     // Year = m.Attributes.Year // Not in MangaMetadata
+                    CoverFilename = GetStringAttribute(m.Relationships
+                        .FirstOrDefault(r => r.Type == "cover_art")?
+                        .Attributes, "fileName")
                 };
             }
             catch
@@ -205,6 +204,24 @@ namespace MangaMesh.Shared.Services
             {
                 return null;
             }
+        }
+        private static string? GetStringAttribute(Dictionary<string, object>? attributes, string key)
+        {
+            if (attributes == null || !attributes.TryGetValue(key, out var value) || value == null)
+            {
+                return null;
+            }
+
+            if (value is System.Text.Json.JsonElement element)
+            {
+                if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    return element.GetString();
+                }
+                return element.ToString();
+            }
+
+            return value.ToString();
         }
     }
 }

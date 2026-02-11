@@ -152,7 +152,12 @@ namespace MangaMesh.Peer.Core.Tracker
             };
 
             var response = await _httpClient.PostAsJsonAsync("/api/series/register", request);
-            response.EnsureSuccessStatusCode();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException($"Failed to register series ({response.StatusCode}): {error}");
+            }
 
             var result = await response.Content.ReadFromJsonAsync<RegisterSeriesResponse>();
             if (result == null) throw new InvalidOperationException("Failed to register series: Empty response");
@@ -203,7 +208,12 @@ namespace MangaMesh.Peer.Core.Tracker
         {
             var encodedKey = Uri.EscapeDataString(publicKeyBase64);
             var response = await _httpClient.PostAsync($"/api/keys/{encodedKey}/challenges", null);
-            response.EnsureSuccessStatusCode();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException($"Failed to create challenge ({response.StatusCode}): {error}");
+            }
 
             return await response.Content.ReadFromJsonAsync<KeyChallengeResponse>()
                 ?? throw new InvalidOperationException("Failed to create challenge: Empty response");
@@ -219,7 +229,12 @@ namespace MangaMesh.Peer.Core.Tracker
             };
 
             var response = await _httpClient.PostAsJsonAsync($"/api/keys/{encodedKey}/challenges/{challengeId}/verify", request);
-            response.EnsureSuccessStatusCode();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException($"Failed to verify challenge ({response.StatusCode}): {error}");
+            }
 
             return await response.Content.ReadFromJsonAsync<KeyVerificationResponse>()
                 ?? throw new InvalidOperationException("Failed to verify challenge: Empty response");
@@ -228,7 +243,12 @@ namespace MangaMesh.Peer.Core.Tracker
         public async Task AuthorizeManifestAsync(Shared.Models.AuthorizeManifestRequest request)
         {
             var response = await _httpClient.PostAsJsonAsync("/api/announce/authorize", request);
-            response.EnsureSuccessStatusCode();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException($"Failed to authorize manifest ({response.StatusCode}): {error}");
+            }
         }
 
     }

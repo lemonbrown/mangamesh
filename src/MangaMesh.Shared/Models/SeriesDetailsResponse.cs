@@ -10,6 +10,9 @@ public class SeriesDetailsResponse
     [JsonPropertyName("title")]
     public required string Title { get; set; }
 
+    [JsonPropertyName("externalMangaId")]
+    public string? ExternalMangaId { get; set; }
+
     [JsonPropertyName("author")]
     public string? Author { get; set; }
 

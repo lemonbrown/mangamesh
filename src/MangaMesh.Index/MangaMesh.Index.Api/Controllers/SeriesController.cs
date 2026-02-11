@@ -1,8 +1,10 @@
 
 using MangaMesh.Shared.Models;
+using MangaMesh.Index.Api.Services;
 using MangaMesh.Shared.Services;
 using MangaMesh.Shared.Stores;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 
 namespace MangaMesh.Index.Api.Controllers;
 
@@ -15,19 +17,25 @@ public class SeriesController : ControllerBase
     private readonly IMangaMetadataProvider _metadataProvider;
     private readonly IManifestEntryStore _manifestEntryStore;
     private readonly INodeRegistry _nodeRegistry;
+    private readonly ICoverService _coverService;
+    private readonly IConfiguration _configuration;
 
     public SeriesController(
         ISeriesStore seriesStore,
         ISeriesRegistry seriesRegistry,
         IMangaMetadataProvider metadataProvider,
         IManifestEntryStore manifestEntryStore,
-        INodeRegistry nodeRegistry)
+        INodeRegistry nodeRegistry,
+        ICoverService coverService,
+        IConfiguration configuration)
     {
         _seriesStore = seriesStore;
         _seriesRegistry = seriesRegistry;
         _metadataProvider = metadataProvider;
         _manifestEntryStore = manifestEntryStore;
         _nodeRegistry = nodeRegistry;
+        _coverService = coverService;
+        _configuration = configuration;
     }
 
     [HttpPost("register")]
@@ -152,6 +160,20 @@ public class SeriesController : ControllerBase
                 Chapters = new List<Chapter>()
             };
         }
+        else if (string.IsNullOrEmpty(series.ExternalMangaId))
+        {
+            var def = await _seriesRegistry.GetByIdAsync(seriesId);
+            if (def != null)
+            {
+                series.ExternalMangaId = def.ExternalMangaId;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(series.ExternalMangaId))
+        {
+            // Fire and forget or await? Await to ensure image is ready for first view.
+            await _coverService.EnsureCoverCachedAsync(series.ExternalMangaId);
+        }
 
         var allNodes = _nodeRegistry.GetAllNodes().ToList();
         var seedCount = allNodes.Count(n => n.ManifestDetails.Values.Any(d => d.SeriesId == seriesId));
@@ -160,6 +182,7 @@ public class SeriesController : ControllerBase
         {
             SeriesId = series.SeriesId,
             Title = series.Title,
+            ExternalMangaId = series.ExternalMangaId,
             Author = series.Author,
             FirstSeenUtc = series.FirstSeenUtc,
             SeedCount = seedCount
@@ -216,5 +239,12 @@ public class SeriesController : ControllerBase
                 UploadedAt = m.UploadedAt
             })
         };
+    }
+
+    [HttpGet("{seriesId}/chapter/{chapterId}/manifest/{manifestHash}/read")]
+    public IActionResult GetChapterRead(string seriesId, string chapterId, string manifestHash)
+    {
+        var gatewayUrl = _configuration["GatewayUrl"] ?? "http://localhost:5170";
+        return RedirectPreserveMethod($"{gatewayUrl}/api/read/{manifestHash}");
     }
 }
