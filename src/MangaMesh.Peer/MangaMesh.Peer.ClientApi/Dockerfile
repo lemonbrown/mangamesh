@@ -1,51 +1,34 @@
-# See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
-
-# Stage 0: Build React Client
+# Stage 1: Build React UI
 FROM node:20 AS client-build
-WORKDIR /app
-COPY ["mangamesh-client/src/mangamesh-client-ui/package.json", "mangamesh-client/src/mangamesh-client-ui/package-lock.json", "./"]
+WORKDIR /ui
+COPY ["MangaMesh.Peer/mangamesh-peer-ui/package.json", "MangaMesh.Peer/mangamesh-peer-ui/package-lock.json", "./"]
 RUN npm install
-COPY ["mangamesh-client/src/mangamesh-client-ui/", "./"]
-# This defaults to outputting to /app/dist
+COPY ["MangaMesh.Peer/mangamesh-peer-ui/", "./"]
+# Build defaults to /ui/dist
 RUN npm run build
 
-# This stage is used when running from VS in fast mode (Default for Debug configuration)
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-USER $APP_UID
-WORKDIR /app
-EXPOSE 8080
-EXPOSE 8081
-
-
-# This stage is used to build the service project
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-ARG BUILD_CONFIGURATION=Release
+# Stage 2: Build .NET API
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-
-# Copy Project Files
-COPY ["mangamesh-client/src/MangaMesh.Client/MangaMesh.Server/MangaMesh.Server.csproj", "mangamesh-client/src/MangaMesh.Client/MangaMesh.Server/"]
-COPY ["mangamesh-client/src/MangaMesh.Client/MangaMesh.Client/MangaMesh.Client.csproj", "mangamesh-client/src/MangaMesh.Client/MangaMesh.Client/"]
-COPY ["mangamesh-shared/src/MangaMesh.Shared/MangaMesh.Shared/MangaMesh.Shared.csproj", "mangamesh-shared/src/MangaMesh.Shared/MangaMesh.Shared/"]
-
-# Restore
-RUN dotnet restore "./mangamesh-client/src/MangaMesh.Client/MangaMesh.Server/MangaMesh.Server.csproj"
-
-# Copy Everything
+COPY ["MangaMesh.Peer/MangaMesh.Peer.ClientApi/MangaMesh.Peer.ClientApi.csproj", "MangaMesh.Peer/MangaMesh.Peer.ClientApi/"]
+COPY ["MangaMesh.Peer/MangaMesh.Peer.Core/MangaMesh.Peer.Core.csproj", "MangaMesh.Peer/MangaMesh.Peer.Core/"]
+COPY ["MangaMesh.Shared/MangaMesh.Shared.csproj", "MangaMesh.Shared/"]
+RUN dotnet restore "MangaMesh.Peer/MangaMesh.Peer.ClientApi/MangaMesh.Peer.ClientApi.csproj"
 COPY . .
+WORKDIR "/src/MangaMesh.Peer/MangaMesh.Peer.ClientApi"
+RUN dotnet build "MangaMesh.Peer.ClientApi.csproj" -c Release -o /app/build
 
-# Build
-WORKDIR "/src/mangamesh-client/src/MangaMesh.Client/MangaMesh.Server"
-RUN dotnet build "./MangaMesh.Server.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
-# This stage is used to publish the service project to be copied to the final stage
 FROM build AS publish
-ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./MangaMesh.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "MangaMesh.Peer.ClientApi.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
-FROM base AS final
+# Stage 3: Final Image
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+EXPOSE 80
+EXPOSE 443
+
 COPY --from=publish /app/publish .
 # Copy built React assets to wwwroot
-COPY --from=client-build /app/dist ./wwwroot
-ENTRYPOINT ["dotnet", "MangaMesh.Server.dll"]
+COPY --from=client-build /ui/dist ./wwwroot
+
+ENTRYPOINT ["dotnet", "MangaMesh.Peer.ClientApi.dll"]

@@ -69,9 +69,9 @@ namespace MangaMesh.Peer.Core.Node
         /// <summary>
         /// Start the DHT node and maintenance loops.
         /// </summary>
-        public void StartWithMaintenance(bool enableBootstrap = true)
+        public void StartWithMaintenance(bool enableBootstrap = true, List<RoutingEntry>? bootstrapNodes = null)
         {
-            Start(enableBootstrap);
+            Start(enableBootstrap, bootstrapNodes);
             _maintenanceToken = new CancellationTokenSource();
             Task.Run(() => MaintenanceLoopAsync(_maintenanceToken.Token));
         }
@@ -143,80 +143,90 @@ namespace MangaMesh.Peer.Core.Node
         {
             try
             {
+                Console.WriteLine("DhtNode: Announcing to index...");
                 // Use our Transport Port for DHT announcements
 
                 var (ip, _) = await _connectionInfo.GetConnectionInfoAsync();
                 var port = Transport.Port; // Always announce OUR listening port for DHT
 
                 var manifests = Storage.GetAllContentHashes().Select(h => Convert.ToHexString(h).ToLowerInvariant()).ToList();
+                Console.WriteLine($"DhtNode: Found {manifests.Count} manifests to announce.");
 
                 var request = new Shared.Models.AnnounceRequest(
                     Convert.ToHexString(Identity.NodeId).ToLowerInvariant(),
-                    new List<string>() // Empty for now, or populate if we track manifests separately
+                    manifests
                 );
 
                 await _tracker.AnnounceAsync(request);
+                Console.WriteLine("DhtNode: Announcement successful.");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to announce to index: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
+                }
             }
         }
 
         /// <summary>
         /// Start the node.
         /// </summary>
-        public void Start(bool enableBootstrap = true)
+        public void Start(bool enableBootstrap = true, List<RoutingEntry>? overrideBootstrapNodes = null)
         {
             if (_running) return;
 
             //bootstrap nodes
-            var bootstrapNodes = new List<RoutingEntry>();
+            var bootstrapNodes = overrideBootstrapNodes ?? new List<RoutingEntry>();
 
-            try
+            if (overrideBootstrapNodes == null)
             {
-                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "bootstrap_nodes.yml");
-                if (File.Exists(configPath))
+                try
                 {
-                    var yaml = File.ReadAllText(configPath);
-                    var deserializer = new YamlDotNet.Serialization.DeserializerBuilder()
-                        .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.CamelCaseNamingConvention.Instance)
-                        .Build();
-
-                    var nodes = deserializer.Deserialize<List<BootstrapNodeConfig>>(yaml);
-
-                    if (nodes != null)
+                    var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "bootstrap_nodes.yml");
+                    if (File.Exists(configPath))
                     {
-                        foreach (var node in nodes)
+                        var yaml = File.ReadAllText(configPath);
+                        var deserializer = new YamlDotNet.Serialization.DeserializerBuilder()
+                            .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.CamelCaseNamingConvention.Instance)
+                            .Build();
+
+                        var nodes = deserializer.Deserialize<List<BootstrapNodeConfig>>(yaml);
+
+                        if (nodes != null)
                         {
-                            bootstrapNodes.Add(new RoutingEntry
+                            foreach (var node in nodes)
                             {
-                                NodeId = Convert.FromHexString(node.NodeId),
-                                Address = new NodeAddress(node.Address.Host, node.Address.Port),
-                                LastSeenUtc = DateTime.UtcNow
-                            });
+                                bootstrapNodes.Add(new RoutingEntry
+                                {
+                                    NodeId = Convert.FromHexString(node.NodeId),
+                                    Address = new NodeAddress(node.Address.Host, node.Address.Port),
+                                    LastSeenUtc = DateTime.UtcNow
+                                });
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to load bootstrap nodes: {ex.Message}");
-            }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to load bootstrap nodes: {ex.Message}");
+                }
 
-            //ensure keys are available
-            var keys = _keyStore.GetAsync().Result;
+                //ensure keys are available
+                var keys = _keyStore.GetAsync().Result;
 
-            if (keys == null)
-                _keypairService.GenerateKeyPairBase64Async().Wait();
+                if (keys == null)
+                    _keypairService.GenerateKeyPairBase64Async().Wait();
 
-            _running = true;
+                _running = true;
 
-            // Message loop is removed as it is now handled by ProtocolRouter/Handler logic externally
+                // Message loop is removed as it is now handled by ProtocolRouter/Handler logic externally
 
-            if (enableBootstrap)
-            {
-                Task.Run(async () => await BootstrapAsync(bootstrapNodes));
+                if (enableBootstrap)
+                {
+                    Task.Run(async () => await BootstrapAsync(bootstrapNodes));
+                }
             }
         }
 

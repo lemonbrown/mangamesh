@@ -1,0 +1,157 @@
+version: '3.8'
+
+services:
+  # --------------------
+  # 1. Bootstrap Node
+  # --------------------
+  # Acts as a stable entry point for the DHT.
+  # Reusing Gateway image but configured as a simple node.
+  bootstrap:
+    build:
+      context: .
+      dockerfile: MangaMesh.Peer/MangaMesh.Peer.Core/Dockerfile
+    container_name: manga-bootstrap
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - Dht__Port=4200
+      - TrackerUrl=http://mm-index-api:7030
+      # Bootstrap Node Identity
+      - Node__PublicKey=AwimzB+Lesq9GMNs27W2FGC2+aNK0O/ymZHPr9fRyiE=
+      - Node__PrivateKey=t66/FG6HweFbkvJI15/iTq37MnqWj+YCEQf+ATZcRQ0=
+    ports:
+      - "4200:4200" # DHT Port
+      # No API port mapping needed for bootstrap unless debugging
+    networks:
+      - mangamesh-net
+
+  # --------------------
+  # 2. Gateway Node
+  # --------------------
+  # The Gateway for the Index/Websites to query.
+  mangamesh.peer.gatewayapi:
+    build:
+      context: .
+      dockerfile: MangaMesh.Peer/MangaMesh.Peer.GatewayApi/Dockerfile
+    container_name: manga-gateway
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Gateway__Port=4201 # Different internal DHT port
+      - Gateway__BootstrapNodes=manga-bootstrap:4200
+      - Gateway__Enabled=true
+      - Gateway__TrackerUrl=http://mm-index-api:7030
+      - GatewayCache__MaxCacheSizeMb=500
+      # Gateway Node Identity
+      - Node__PublicKey=SCwPpOukKLuCdL+D2ut99JPG6vr7MKBEJFYfhTQVxqo=
+      - Node__PrivateKey=mhVuQ0csWpdCt024DAbqGYa4qIHxaadZjrTDRD9gc0k=
+    ports:
+      - "5170:5170" # Gateway API Port
+      - "4201:4201" # DHT Port
+    depends_on:
+      - bootstrap
+    networks:
+      - mangamesh-net
+    volumes:
+      - gateway-data:/app/data
+
+  # --------------------
+  # 3. Peer Node
+  # --------------------
+  # Bundled Client API + Peer UI
+  mangamesh.peer.clientapi:
+    build:
+      context: .
+      dockerfile: MangaMesh.Peer/MangaMesh.Peer.ClientApi/Dockerfile
+    container_name: manga-peer
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - TrackerUrl=http://mm-index-api:7030 # Connects to Index Tracker
+      - Dht__Port=3000
+      - Dht__Bootstrap=true # Connects to bootstrap nodes
+      - Dht__BootstrapNodes=manga-bootstrap:4200
+    ports:
+      - "7124:80" # Maps container port 80 (API + UI) to host 7124
+      - "3000:3000" # DHT Port
+    depends_on:
+      - bootstrap
+      - mangamesh.index.api
+    networks:
+      - mangamesh-net
+    volumes:
+      - peer-data:/app/data
+      - peer-input:/app/input
+
+  # --------------------
+  # 4. Index API
+  # --------------------
+  mangamesh.index.api:
+    build:
+      context: .
+      dockerfile: MangaMesh.Index/MangaMesh.Index.Api/Dockerfile
+    container_name: mm-index-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:7030
+    ports:
+      - "7030:7030"
+    networks:
+      - mangamesh-net
+    volumes:
+      - index-data:/app/data
+
+  # --------------------
+  # 5. Index Admin API
+  # --------------------
+  mangamesh.index.adminapi:
+    build:
+      context: .
+      dockerfile: MangaMesh.Index/MangaMesh.Index.AdminApi/Dockerfile
+    container_name: manga-index-admin-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:7078
+      - Tracker__Url=http://index-api:7030
+    ports:
+      - "7078:7078"
+    depends_on:
+      - mangamesh.index.api # Ideally shares DB
+    networks:
+      - mangamesh-net
+    volumes:
+      - index-data:/app/data # Share data volume with Index API for DB access
+
+  # --------------------
+  # 6. Komorii (Website)
+  # --------------------
+  komorii:
+    build:
+      context: .
+      dockerfile: websites/komorii/Dockerfile
+    container_name: manga-komorii
+    ports:
+      - "5173:80"
+    networks:
+      - mangamesh-net
+
+  # --------------------
+  # 7. Admin UI (Website)
+  # --------------------
+  admin-ui:
+    build:
+      context: .
+      dockerfile: websites/index-admin-ui/Dockerfile
+    container_name: manga-admin-ui
+    ports:
+      - "5174:80"
+    networks:
+      - mangamesh-net
+
+networks:
+  mangamesh-net:
+    driver: bridge
+
+volumes:
+  gateway-data:
+  peer-data:
+  peer-input:
+  index-data:

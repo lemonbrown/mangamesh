@@ -18,12 +18,14 @@ using System.Diagnostics;
 
 Console.WriteLine("                                                   _     \r\n  /\\/\\   __ _ _ __   __ _  __ _    /\\/\\   ___  ___| |__  \r\n /    \\ / _` | '_ \\ / _` |/ _` |  /    \\ / _ \\/ __| '_ \\ \r\n/ /\\/\\ \\ (_| | | | | (_| | (_| | / /\\/\\ \\  __/\\__ \\ | | |\r\n\\/    \\/\\__,_|_| |_|\\__, |\\__,_| \\/    \\/\\___||___/_| |_|\r\n                    |___/                                ");
 
-var root = "input";
-
-var trackerUrl = "https://localhost:7030";
-
-var builder = new HostBuilder().ConfigureServices(services =>
+var builder = new HostBuilder()
+    .ConfigureAppConfiguration(c => c.AddEnvironmentVariables().AddCommandLine(args))
+    .ConfigureServices((context, services) =>
 {
+    var config = context.Configuration;
+    var root = "input";
+    var trackerUrl = config["TrackerUrl"] ?? "https://localhost:7030";
+
     services
     .AddLogging(n => n.AddConsole())
     .AddScoped<ITrackerClient, TrackerClient>()
@@ -45,6 +47,12 @@ var builder = new HostBuilder().ConfigureServices(services =>
     services.AddHttpClient<ITrackerClient, TrackerClient>(client =>
     {
         client.BaseAddress = new Uri(trackerUrl);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var handler = new HttpClientHandler();
+        handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+        return handler;
     });
 
 

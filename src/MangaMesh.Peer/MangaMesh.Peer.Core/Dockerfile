@@ -1,27 +1,26 @@
+# Base stage
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
+WORKDIR /app
+
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Copy csproj files first to leverage caching
-COPY ["mangamesh-client/src/MangaMesh.Client/MangaMesh.Client/MangaMesh.Client.csproj", "mangamesh-client/src/MangaMesh.Client/MangaMesh.Client/"]
-COPY ["mangamesh-shared/src/MangaMesh.Shared/MangaMesh.Shared/MangaMesh.Shared.csproj", "mangamesh-shared/src/MangaMesh.Shared/MangaMesh.Shared/"]
+COPY ["MangaMesh.Peer/MangaMesh.Peer.Core/MangaMesh.Peer.Core.csproj", "MangaMesh.Peer/MangaMesh.Peer.Core/"]
+COPY ["MangaMesh.Shared/MangaMesh.Shared.csproj", "MangaMesh.Shared/"]
 
-# Restore dependencies
-RUN dotnet restore "mangamesh-client/src/MangaMesh.Client/MangaMesh.Client/MangaMesh.Client.csproj"
+RUN dotnet restore "MangaMesh.Peer/MangaMesh.Peer.Core/MangaMesh.Peer.Core.csproj"
 
-# Copy the rest of the source code
 COPY . .
-
-# Build the project
-WORKDIR "/src/mangamesh-client/src/MangaMesh.Client/MangaMesh.Client"
-RUN dotnet build "MangaMesh.Client.csproj" -c Release -o /app/build
+WORKDIR "/src/MangaMesh.Peer/MangaMesh.Peer.Core"
+RUN dotnet build "MangaMesh.Peer.Core.csproj" -c Release -o /app/build
 
 # Publish stage
 FROM build AS publish
-RUN dotnet publish "MangaMesh.Client.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "MangaMesh.Peer.Core.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Final stage
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS final
+FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "MangaMesh.Client.dll"]
+ENTRYPOINT ["dotnet", "MangaMesh.Peer.Core.dll"]

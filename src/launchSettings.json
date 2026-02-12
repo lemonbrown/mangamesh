@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "Docker Compose": {
+      "commandName": "DockerCompose",
+      "commandVersion": "1.0",
+      "serviceActions": {
+        "mangamesh.index.api": "StartDebugging",
+        "mangamesh.index.adminapi": "StartDebugging",
+        "mangamesh.peer.clientapi": "StartDebugging",
+        "mangamesh.peer.core": "StartDebugging",
+        "mangamesh.peer.gatewayapi": "StartDebugging"
+      }
+    }
+  }
+}

@@ -6,7 +6,8 @@ export const mockNodeStatus: NodeStatus = {
     seededManifests: 12,
     storageUsedMb: 450,
     isConnected: true,
-    lastPingUtc: new Date().toISOString()
+    lastPingUtc: new Date().toISOString(),
+    trackerUrl: "http://mock-tracker:7030"
 };
 
 export const mockStorageStats: StorageStats = {

@@ -10,6 +10,7 @@ namespace MangaMesh.Peer.Core.Node
     using Microsoft.Extensions.Hosting;
     using System.Threading;
     using System.Threading.Tasks;
+    using MangaMesh.Peer.Core.Transport; // Added for RoutingEntry
 
     public class DhtHostedService : IHostedService
     {
@@ -25,8 +26,29 @@ namespace MangaMesh.Peer.Core.Node
         public Task StartAsync(CancellationToken cancellationToken)
         {
             var enableBootstrap = _configuration.GetValue<bool>("Dht:Bootstrap", true);
+            var bootstrapNodesConfig = _configuration.GetValue<string>("Dht:BootstrapNodes");
+            var bootstrapNodes = new List<RoutingEntry>();
+
+            if (!string.IsNullOrEmpty(bootstrapNodesConfig))
+            {
+                var nodes = bootstrapNodesConfig.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var node in nodes)
+                {
+                    var parts = node.Split(':');
+                    if (parts.Length == 2 && int.TryParse(parts[1], out var port))
+                    {
+                        bootstrapNodes.Add(new RoutingEntry
+                        {
+                            NodeId = Array.Empty<byte>(), // Unknown ID, will discover
+                            Address = new NodeAddress(parts[0], port),
+                            LastSeenUtc = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+
             // Start message loop + maintenance
-            _dhtNode.StartWithMaintenance(enableBootstrap);
+            _dhtNode.StartWithMaintenance(enableBootstrap, bootstrapNodes.Count > 0 ? bootstrapNodes : null);
             return Task.CompletedTask;
         }
 

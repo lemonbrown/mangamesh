@@ -19,13 +19,14 @@ namespace MangaMesh.Index.AdminApi.Controllers
         public async Task<IActionResult> GetStats()
         {
             var nodes = await _trackerService.GetAllNodesAsync();
+            var activeNodes = nodes.Where(n => (DateTime.UtcNow - n.LastSeen).TotalMinutes < 15).ToList();
+
             return Ok(new
             {
-                ActiveNodes = nodes.Count(n => (DateTime.UtcNow - n.LastSeen).TotalMinutes < 15), // "Online" definition
-                TotalPeers = nodes.Count(), // Assuming all are peers for now or check headers? TrackerNode doesn't have Type yet, wait UI has Type.
-                // For now just return counts based on what we have.
-                Gateways = 0,
-                Bootstraps = 0
+                ActiveNodes = activeNodes.Count,
+                TotalPeers = nodes.Count(n => n.NodeType == "Peer"),
+                Gateways = nodes.Count(n => n.NodeType == "Gateway"),
+                Bootstraps = nodes.Count(n => n.NodeType == "Bootstrap")
             });
         }
 
@@ -33,14 +34,21 @@ namespace MangaMesh.Index.AdminApi.Controllers
         public async Task<IActionResult> GetNodes([FromQuery] string? filter)
         {
             var nodes = await _trackerService.GetAllNodesAsync();
+
+            // Filter by type if provided
+            if (!string.IsNullOrEmpty(filter) && filter != "All")
+            {
+                nodes = nodes.Where(n => n.NodeType == filter).ToList();
+            }
+
             // Map to UI model
             var result = nodes.Select(n => new
             {
                 id = n.NodeId,
-                type = "Peer", // Default
+                type = n.NodeType,
                 lastSeen = n.LastSeen,
                 status = (DateTime.UtcNow - n.LastSeen).TotalMinutes < 15 ? "Online" : "Offline",
-                version = "1.0.0" 
+                version = "1.0.0"
             });
 
             return Ok(result);

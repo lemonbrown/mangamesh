@@ -23,7 +23,7 @@ namespace MangaMesh.Peer.Core.Node
         Task HandleMessageAsync(DhtMessage message);
         Task<List<RoutingEntry>> FindNodeAsync(byte[] nodeId, RoutingEntry? bootstrapNode = null);
         Task PingAsync(RoutingEntry node);
-        void StartWithMaintenance(bool enableBootstrap = true);
+        void StartWithMaintenance(bool enableBootstrap = true, List<RoutingEntry>? bootstrapNodes = null);
         void StopWithMaintenance();
     }
 }

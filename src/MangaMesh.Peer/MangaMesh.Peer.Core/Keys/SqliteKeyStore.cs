@@ -7,14 +7,25 @@ namespace MangaMesh.Peer.Core.Keys
     public class SqliteKeyStore : IKeyStore
     {
         private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _scopeFactory;
+        private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
-        public SqliteKeyStore(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory)
+        public SqliteKeyStore(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory, Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
             _scopeFactory = scopeFactory;
+            _configuration = configuration;
         }
 
         public async Task<PublicPrivateKeyPair?> GetAsync()
         {
+            // check config first
+            var pubKey = _configuration["Node:PublicKey"];
+            var privKey = _configuration["Node:PrivateKey"];
+
+            if (!string.IsNullOrEmpty(pubKey) && !string.IsNullOrEmpty(privKey))
+            {
+                return new PublicPrivateKeyPair(pubKey, privKey);
+            }
+
             using (var scope = _scopeFactory.CreateScope())
             {
                 var context = scope.ServiceProvider.GetRequiredService<ClientDbContext>();

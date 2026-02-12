@@ -11,5 +11,6 @@ namespace MangaMesh.Shared.Models
         public string ManifestSetHash { get; set; } = "";
         public int ManifestCount { get; set; }
         public DateTime LastSeen { get; set; }
+        public string NodeType { get; set; } = "Peer";
     }
 }

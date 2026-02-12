@@ -12,15 +12,13 @@ namespace MangaMesh.Peer.GatewayApi.Services;
 public class GatewayService
 {
     private readonly IDhtNode _dhtNode;
-    private readonly IMemoryCache _cache;
-    private readonly IBlobStore _blobStore;
+    private readonly IGatewayCache _cache;
     private readonly ILogger<GatewayService> _logger;
 
-    public GatewayService(IDhtNode dhtNode, IMemoryCache cache, IBlobStore blobStore, ILogger<GatewayService> logger)
+    public GatewayService(IDhtNode dhtNode, IGatewayCache cache, ILogger<GatewayService> logger)
     {
         _dhtNode = dhtNode;
         _cache = cache;
-        _blobStore = blobStore;
         _logger = logger;
     }
 
@@ -35,13 +33,7 @@ public class GatewayService
         var nodeAddresses = new List<string>();
 
         // 1. Check Cache for Manifest
-        if (_cache.TryGetValue($"manifest:{contentHash}", out ManifestData? cached))
-        {
-            // Even if cached, we might want to refresh providers?
-            // For now, if cached, we might check DHT for providers only if we need them.
-            // But this method implies we want nodes.
-            // Let's proceed to DHT lookup for providers regardless, but skip manifest fetch if cached.
-        }
+        var cached = await _cache.GetManifestAsync(contentHash);
 
         var hashBytes = Encoding.UTF8.GetBytes(contentHash);
 
@@ -73,7 +65,7 @@ public class GatewayService
 
                 if (response is ManifestData data)
                 {
-                    _cache.Set($"manifest:{contentHash}", data, TimeSpan.FromMinutes(30));
+                    await _cache.PutManifestAsync(data);
                     return (data, nodeAddresses);
                 }
             }
@@ -88,19 +80,11 @@ public class GatewayService
 
     public async Task<byte[]?> GetBlobAsync(string hash)
     {
-        var blobHash = new BlobHash(hash);
 
-        // 1. Check Local Blob Store
-        if (_blobStore.Exists(blobHash))
-        {
-            using var stream = await _blobStore.OpenReadAsync(blobHash);
-            if (stream != null)
-            {
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                return ms.ToArray();
-            }
-        }
+
+        // 1. Check Cache
+        var cached = await _cache.GetBlobAsync(hash);
+        if (cached != null) return cached;
 
         // 2. DHT Lookup
         var hashBytes = Encoding.UTF8.GetBytes(hash); // Note: DHT might key by Base64 or specific encoding. 
@@ -146,9 +130,8 @@ public class GatewayService
                         continue;
                     }
 
-                    // 4. Store locally
-                    using var ms = new MemoryStream(data.Data);
-                    await _blobStore.PutAsync(ms);
+                    // 4. Store in Cache
+                    await _cache.PutBlobAsync(hash, data.Data);
 
                     return data.Data;
                 }

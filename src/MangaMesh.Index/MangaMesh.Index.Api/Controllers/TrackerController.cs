@@ -22,6 +22,8 @@ namespace MangaMesh.Index.Api.Controllers
         private readonly IPublicKeyRegistry _keyRegistry; // Need this for manual verification if not injected yet. Check constructor. 
         // Actually PublicKeyRegistry isn't injected yet. Let's check constructor params.
 
+        private readonly IConfiguration _configuration;
+
         public TrackerController(
             ILogger<TrackerController> logger,
             INodeRegistry nodeRegistry,
@@ -29,11 +31,10 @@ namespace MangaMesh.Index.Api.Controllers
             IMangaMetadataProvider metadataProvider,
             ISeriesRegistry seriesRegistry,
             IApprovedKeyStore approvedKeyStore,
-
-
             MangaMesh.Shared.Services.IManifestAuthorizationService authService,
             IPublicKeyRegistry keyRegistry,
-            ICoverService coverService)
+            ICoverService coverService,
+            IConfiguration configuration)
         {
             _logger = logger;
             _nodeRegistry = nodeRegistry;
@@ -44,6 +45,7 @@ namespace MangaMesh.Index.Api.Controllers
             _authService = authService;
             _keyRegistry = keyRegistry;
             _coverService = coverService;
+            _configuration = configuration;
         }
 
         [HttpGet("/api/keys/{publicKeyBase64}/allowed")]
@@ -59,11 +61,10 @@ namespace MangaMesh.Index.Api.Controllers
         [HttpPost("/announce")]
         public async Task<IResult> Announce(AnnounceRequest request)
         {
-            // ... (existing Announce logic untouched) ...
             // Calculate set hash for smart sync
             var sortedHashes = request.Manifests.OrderBy(h => h).ToList();
             var manifestSetHash = "";
-            // ...
+
             if (sortedHashes.Count > 0)
             {
                 var sb = new System.Text.StringBuilder();
@@ -76,12 +77,27 @@ namespace MangaMesh.Index.Api.Controllers
                 manifestSetHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
 
+            // Determine Node Type
+            var nodeType = "Peer";
+            var gateways = _configuration.GetSection("RoleConfiguration:Gateways").Get<string[]>() ?? Array.Empty<string>();
+            var bootstraps = _configuration.GetSection("RoleConfiguration:Bootstraps").Get<string[]>() ?? Array.Empty<string>();
+
+            if (gateways.Contains(request.NodeId))
+            {
+                nodeType = "Gateway";
+            }
+            else if (bootstraps.Contains(request.NodeId))
+            {
+                nodeType = "Bootstrap";
+            }
+
             var node = new TrackerNode()
             {
                 NodeId = request.NodeId,
                 Manifests = new HashSet<string>(request.Manifests),
                 ManifestSetHash = manifestSetHash,
-                ManifestCount = request.Manifests.Count
+                ManifestCount = request.Manifests.Count,
+                NodeType = nodeType
             };
 
             // Populate ManifestDetails for Seed Counting

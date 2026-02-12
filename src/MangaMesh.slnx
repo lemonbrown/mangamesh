@@ -12,8 +12,12 @@
   <Folder Name="/Shared/">
     <Project Path="MangaMesh.Shared/MangaMesh.Shared.csproj" />
   </Folder>
+  <Folder Name="/Solution Items/" />
   <Folder Name="/Tests/">
     <Project Path="../tests/MangaMesh.IntegrationTests/MangaMesh.IntegrationTests.csproj" />
     <Project Path="../tests/MangaMesh.Peer.Tests/MangaMesh.Peer.Tests.csproj" />
   </Folder>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
 </Solution>

@@ -52,7 +52,7 @@ public class GatewayController : ControllerBase
                     Filename = f.Path,
                     Size = f.Size
                 }),
-                Nodes = nodes
+                Nodes = new List<string> { $"{Request.Scheme}://{Request.Host}" }
             };
 
             return Ok(response);

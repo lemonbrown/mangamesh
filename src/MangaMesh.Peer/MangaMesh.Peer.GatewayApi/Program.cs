@@ -26,6 +26,10 @@ var gatewayConfig = new GatewayConfig();
 builder.Configuration.GetSection("Gateway").Bind(gatewayConfig);
 builder.Services.AddSingleton(gatewayConfig);
 
+// Gateway Cache Config
+builder.Services.Configure<GatewayCacheOptions>(builder.Configuration.GetSection("GatewayCache"));
+builder.Services.AddSingleton<IGatewayCache, GatewayCacheService>();
+
 // MangaMesh Services
 // Need to register KeyPairService and KeyStore properly
 builder.Services.AddSingleton<IKeyPairService, KeyPairService>();

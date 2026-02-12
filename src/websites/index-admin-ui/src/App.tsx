@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -9,7 +10,7 @@ import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 
 // Protected Route Component
-const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const isAuthenticated = localStorage.getItem('isAdminAuthenticated') === 'true';
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;

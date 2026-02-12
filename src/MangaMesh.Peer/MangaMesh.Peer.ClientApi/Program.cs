@@ -12,6 +12,8 @@ using MangaMesh.Peer.Core.Replication;
 using MangaMesh.Peer.Core.Storage;
 using MangaMesh.Peer.Core.Subscriptions;
 using MangaMesh.Peer.Core.Tracker;
+using MangaMesh.Peer.Core.Transport; // For TcpTransport
+
 using MangaMesh.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,12 +56,40 @@ builder.Services.AddDbContext<ClientDbContext>(options =>
 builder.Services
         .AddScoped<ImportChapterService>()
         .AddScoped<IPeerFetcher, PeerFetcher>()
-        .AddScoped<IKeyPairService, KeyPairService>()
-        .AddScoped<IKeyStore, SqliteKeyStore>()
+        .AddSingleton<IKeyPairService, KeyPairService>() // Singleton, depends on Singleton IKeyStore
+        .AddScoped<SqliteKeyStore>() // Concrete Scoped
+        .AddSingleton<IKeyStore, MangaMesh.Peer.ClientApi.Services.SingletonKeyStore>() // Singleton Wrapper
         .AddScoped<MangaMesh.Peer.ClientApi.Services.IImportChapterService, ImportChapterServiceWrapper>()
         .AddSingleton<INodeConnectionInfoProvider, ServerNodeConnectionInfoProvider>()
         .AddSingleton<IChallengeService, ChallengeService>()
         .AddScoped<IChunkIngester, ChunkIngester>();
+
+builder.Services.AddSingleton<INodeIdentity, NodeIdentity>();
+
+
+
+// DHT Node Services
+builder.Services.AddSingleton<ITransport>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var port = config.GetValue<int>("Dht:Port", 3001);
+    return new TcpTransport(listenPort: port);
+});
+builder.Services.AddSingleton<IDhtStorage, InMemoryDhtStorage>();
+builder.Services.AddSingleton<IDhtNode>(sp =>
+{
+    var identity = sp.GetRequiredService<INodeIdentity>();
+    var transport = sp.GetRequiredService<ITransport>();
+    var storage = sp.GetRequiredService<IDhtStorage>();
+    var keyStore = sp.GetRequiredService<IKeyStore>();
+    var keypariService = sp.GetRequiredService<IKeyPairService>();
+    var tracker = sp.GetRequiredService<ITrackerClient>();
+    var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
+    return new DhtNode(identity, transport, storage, keypariService, keyStore, tracker, connectionInfo);
+});
+builder.Services.AddHostedService<DhtHostedService>();
+
+
 
 builder.Services.AddMemoryCache();
 
