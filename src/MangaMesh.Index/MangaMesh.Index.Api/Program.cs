@@ -56,8 +56,10 @@ builder.Services.AddCors(options =>
 });
 
 
+var dbPath = Path.Combine(AppContext.BaseDirectory, "data", "tracker.db");
+Console.WriteLine($"[DEBUG] Database Path: {dbPath}");
 builder.Services.AddDbContext<IndexDbContext>(options =>
-    options.UseSqlite($"Data Source={AppContext.BaseDirectory}data\\tracker.db"));
+    options.UseSqlite($"Data Source={dbPath}"));
 
 
 builder.Services.AddScoped<ICoverService, CoverService>();

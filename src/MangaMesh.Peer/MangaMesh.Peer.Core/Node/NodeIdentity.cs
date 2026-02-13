@@ -16,13 +16,41 @@ namespace MangaMesh.Peer.Core.Node
         public byte[] PublicKey { get; private set; }
         private byte[] _privateKey;
 
-        public NodeIdentity(IKeyPairService keyPairService)
+        public NodeIdentity(IKeyPairService keyPairService, Microsoft.Extensions.Configuration.IConfiguration configuration, IKeyStore keyStore)
         {
-            var result = keyPairService.GenerateKeyPairBase64Async().Result;
+            string? pubKeyBase64 = configuration["Node:PublicKey"];
+            string? privKeyBase64 = configuration["Node:PrivateKey"];
 
-            PublicKey = Convert.FromBase64String(result.PublicKeyBase64);
-            _privateKey = Convert.FromBase64String(result.PrivateKeyBase64);
+            if (!string.IsNullOrEmpty(pubKeyBase64) && !string.IsNullOrEmpty(privKeyBase64))
+            {
+                // 1. Use Configured Keys
+                Console.WriteLine($"[NodeIdentity] Loaded Identity from Configuration: {pubKeyBase64.Substring(0, 10)}...");
+                PublicKey = Convert.FromBase64String(pubKeyBase64);
+                _privateKey = Convert.FromBase64String(privKeyBase64);
+            }
+            else
+            {
+                // 2. Try Load from KeyStore
+                var storedKeys = keyStore.GetAsync().Result;
+                if (storedKeys != null)
+                {
+                    Console.WriteLine($"[NodeIdentity] Loaded Identity from KeyStore: {storedKeys.PublicKeyBase64.Substring(0, 10)}...");
+                    PublicKey = Convert.FromBase64String(storedKeys.PublicKeyBase64);
+                    _privateKey = Convert.FromBase64String(storedKeys.PrivateKeyBase64);
+                }
+                else
+                {
+                    // 3. Generate New Keys
+                    Console.WriteLine("[NodeIdentity] No Identity found. Generating new KeyPair...");
+                    var result = keyPairService.GenerateKeyPairBase64Async().Result;
+
+                    PublicKey = Convert.FromBase64String(result.PublicKeyBase64);
+                    _privateKey = Convert.FromBase64String(result.PrivateKeyBase64);
+                }
+            }
+
             NodeId = Crypto.Sha256(PublicKey);
+            Console.WriteLine($"[NodeIdentity] Active NodeID: {Convert.ToHexString(NodeId).ToLower()}");
         }
 
         public byte[] Sign(byte[] data)

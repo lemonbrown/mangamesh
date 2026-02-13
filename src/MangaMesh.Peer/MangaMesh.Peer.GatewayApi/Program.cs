@@ -94,8 +94,15 @@ builder.Services.AddSingleton<GatewayService>();
 builder.Services.AddSingleton<Func<string, byte[]?>>(sp => (hash) => null);
 
 
+// Ensure data directory exists
+var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+if (!Directory.Exists(dataDir))
+{
+    Directory.CreateDirectory(dataDir);
+}
+
 builder.Services.AddDbContext<ClientDbContext>(options =>
-    options.UseSqlite($"Data Source={Path.Combine(AppContext.BaseDirectory, "data", "mangamesh.db")}"));
+    options.UseSqlite($"Data Source={Path.Combine(dataDir, "mangamesh.db")}"));
 
 // Manifest Store
 builder.Services.AddSingleton<IManifestStore, SqliteManifestStore>();

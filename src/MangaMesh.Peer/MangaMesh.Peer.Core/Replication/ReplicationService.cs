@@ -111,9 +111,9 @@ namespace MangaMesh.Peer.Core.Replication
                     _nodeIdentity.NodeId,
                     manifestHashes.Select(m => m.Value).ToList());
 
-                await tracker.AnnounceAsync(
-                    announcementRequest
-                );
+                //await tracker.AnnounceAsync(
+                //    announcementRequest
+                //);
 
                 _logger.LogInformation("Announced {count} manifests", manifestHashes.Count());
                 _nodeIdentity.UpdateStatus(true);

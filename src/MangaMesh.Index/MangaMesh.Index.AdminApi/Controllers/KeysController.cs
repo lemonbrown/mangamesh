@@ -38,7 +38,7 @@ namespace MangaMesh.Index.AdminApi.Controllers
                 {
                     id = a.PublicKeyBase64, // Use full key as ID
                     name = a.Comment,
-                    keyPreview = a.PublicKeyBase64.Substring(0, 10) + "...",
+                    //keyPreview = a.PublicKeyBase64.Substring(0, 10) + "...",
                     addedAt = a.AddedAt,
                     status = (k?.Revoked == true) ? "Revoked" : "Active"
                 };

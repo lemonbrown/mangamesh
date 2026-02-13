@@ -23,8 +23,10 @@ builder.Services.AddCors(options =>
 });
 
 // Database
+var dbPath = Path.Combine(AppContext.BaseDirectory, "data", "tracker.db");
+Console.WriteLine($"[DEBUG] Database Path: {dbPath}");
 builder.Services.AddDbContext<IndexDbContext>(options =>
-    options.UseSqlite($"Data Source={Path.Combine(AppContext.BaseDirectory, "data", "tracker.db")}"));
+    options.UseSqlite($"Data Source={dbPath}"));
 
 // Service Implementations
 // Register Configuration
@@ -67,5 +69,13 @@ app.UseCors();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Initialize Database
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var context = services.GetRequiredService<IndexDbContext>();
+    context.Database.EnsureCreated();
+}
 
 app.Run();

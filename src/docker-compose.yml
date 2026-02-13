@@ -6,15 +6,14 @@ services:
   # --------------------
   # Acts as a stable entry point for the DHT.
   # Reusing Gateway image but configured as a simple node.
-  bootstrap:
+  mangamesh.peer.core:
     build:
       context: .
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.Core/Dockerfile
-    container_name: manga-bootstrap
     environment:
       - DOTNET_ENVIRONMENT=Development
       - Dht__Port=4200
-      - TrackerUrl=http://mm-index-api:7030
+      - TrackerUrl=http://mangamesh.index.api:7030
       # Bootstrap Node Identity
       - Node__PublicKey=AwimzB+Lesq9GMNs27W2FGC2+aNK0O/ymZHPr9fRyiE=
       - Node__PrivateKey=t66/FG6HweFbkvJI15/iTq37MnqWj+YCEQf+ATZcRQ0=
@@ -32,13 +31,12 @@ services:
     build:
       context: .
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.GatewayApi/Dockerfile
-    container_name: manga-gateway
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - Gateway__Port=4201 # Different internal DHT port
-      - Gateway__BootstrapNodes=manga-bootstrap:4200
+      - Gateway__BootstrapNodes=mangamesh.peer.core:4200
       - Gateway__Enabled=true
-      - Gateway__TrackerUrl=http://mm-index-api:7030
+      - Gateway__TrackerUrl=http://mangamesh.index.api:7030
       - GatewayCache__MaxCacheSizeMb=500
       # Gateway Node Identity
       - Node__PublicKey=SCwPpOukKLuCdL+D2ut99JPG6vr7MKBEJFYfhTQVxqo=
@@ -47,39 +45,55 @@ services:
       - "5170:5170" # Gateway API Port
       - "4201:4201" # DHT Port
     depends_on:
-      - bootstrap
+      - mangamesh.peer.core
     networks:
       - mangamesh-net
     volumes:
       - gateway-data:/app/data
 
   # --------------------
-  # 3. Peer Node
+  # 3. Peer API
   # --------------------
-  # Bundled Client API + Peer UI
+  # API only
   mangamesh.peer.clientapi:
     build:
       context: .
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.ClientApi/Dockerfile
-    container_name: manga-peer
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:80
-      - TrackerUrl=http://mm-index-api:7030 # Connects to Index Tracker
+      - TrackerUrl=http://mangamesh.index.api:7030 # Connects to Index Tracker
       - Dht__Port=3000
       - Dht__Bootstrap=true # Connects to bootstrap nodes
-      - Dht__BootstrapNodes=manga-bootstrap:4200
+      - Dht__BootstrapNodes=mangamesh.peer.core:4200
+      # Peer Node Identity
+      - Node__PublicKey=i1G2y3J4k5L6m7N8o9P0q1R2s3T4u5V6w7X8y9Z0a1b=
+      - Node__PrivateKey=c2D3e4F5g6H7i8J9k0L1m2N3o4P5q6R7s8T9u0V1w2x=
     ports:
-      - "7124:80" # Maps container port 80 (API + UI) to host 7124
+      # API port not exposed to host directly, accessed via UI proxy or internal network
       - "3000:3000" # DHT Port
     depends_on:
-      - bootstrap
-      - mangamesh.index.api
+      - mangamesh.peer.core
     networks:
       - mangamesh-net
     volumes:
       - peer-data:/app/data
       - peer-input:/app/input
+
+  # --------------------
+  # 4. Peer UI
+  # --------------------
+  # React UI serving via Nginx
+  mangamesh.peer.ui:
+    build:
+      context: MangaMesh.Peer/mangamesh-peer-ui
+      dockerfile: Dockerfile
+    ports:
+      - "7124:80" # Maps container port 80 to host 7124 (Access UI here)
+    depends_on:
+      - mangamesh.peer.clientapi
+    networks:
+      - mangamesh-net
 
   # --------------------
   # 4. Index API
@@ -88,7 +102,6 @@ services:
     build:
       context: .
       dockerfile: MangaMesh.Index/MangaMesh.Index.Api/Dockerfile
-    container_name: mm-index-api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:7030
@@ -106,11 +119,10 @@ services:
     build:
       context: .
       dockerfile: MangaMesh.Index/MangaMesh.Index.AdminApi/Dockerfile
-    container_name: manga-index-admin-api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:7078
-      - Tracker__Url=http://index-api:7030
+      - Tracker__Url=http://mangamesh.index.api:7030
     ports:
       - "7078:7078"
     depends_on:
@@ -127,7 +139,9 @@ services:
     build:
       context: .
       dockerfile: websites/komorii/Dockerfile
-    container_name: manga-komorii
+    environment:
+      - API_URL=http://localhost:5170 # Point to Gateway via host port? No, client side calls.
+      # Web apps usually need to know where the API is publically reachable.
     ports:
       - "5173:80"
     networks:
@@ -140,7 +154,6 @@ services:
     build:
       context: .
       dockerfile: websites/index-admin-ui/Dockerfile
-    container_name: manga-admin-ui
     ports:
       - "5174:80"
     networks:
