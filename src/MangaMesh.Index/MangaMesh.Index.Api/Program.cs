@@ -56,8 +56,16 @@ builder.Services.AddCors(options =>
 });
 
 
-var dbPath = Path.Combine(AppContext.BaseDirectory, "data", "tracker.db");
-Console.WriteLine($"[DEBUG] Database Path: {dbPath}");
+// Use explicit path to ensure both APIs use the same database
+var dbPath = "/app/data/tracker.db";
+var dbDir = Path.GetDirectoryName(dbPath);
+if (!Directory.Exists(dbDir))
+{
+    Directory.CreateDirectory(dbDir!);
+    Console.WriteLine($"[DEBUG] Index API - Created directory: {dbDir}");
+}
+Console.WriteLine($"[DEBUG] Index API - Database Path: {dbPath}");
+Console.WriteLine($"[DEBUG] Index API - AppContext.BaseDirectory: {AppContext.BaseDirectory}");
 builder.Services.AddDbContext<IndexDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 
@@ -82,12 +90,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-app.UseHttpsRedirection();
-
-app.UseCors("AllowAll");
-
-app.UseHttpsRedirection();
 
 app.UseCors("AllowAll");
 

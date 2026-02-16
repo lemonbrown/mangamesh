@@ -22,9 +22,16 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Database
-var dbPath = Path.Combine(AppContext.BaseDirectory, "data", "tracker.db");
-Console.WriteLine($"[DEBUG] Database Path: {dbPath}");
+// Database - Use explicit path to ensure both APIs use the same database
+var dbPath = "/app/data/tracker.db";
+var dbDir = Path.GetDirectoryName(dbPath);
+if (!Directory.Exists(dbDir))
+{
+    Directory.CreateDirectory(dbDir!);
+    Console.WriteLine($"[DEBUG] Admin API - Created directory: {dbDir}");
+}
+Console.WriteLine($"[DEBUG] Admin API - Database Path: {dbPath}");
+Console.WriteLine($"[DEBUG] Admin API - AppContext.BaseDirectory: {AppContext.BaseDirectory}");
 builder.Services.AddDbContext<IndexDbContext>(options =>
     options.UseSqlite($"Data Source={dbPath}"));
 

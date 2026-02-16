@@ -64,8 +64,8 @@ namespace MangaMesh.Shared.Services
             var publicKeyBytes = Convert.FromBase64String(key.PublicKeyBase64);
 
             var valid = Chaos.NaCl.Ed25519.Verify(
-               signature,
-               nonceBytes,
+               new ArraySegment<byte>(signature),
+               new ArraySegment<byte>(nonceBytes),
                new ArraySegment<byte>(publicKeyBytes)
            );
 
