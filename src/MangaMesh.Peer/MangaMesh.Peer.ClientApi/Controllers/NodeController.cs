@@ -10,13 +10,13 @@ namespace MangaMesh.Peer.ClientApi.Controllers
     public class NodeController : ControllerBase
     {
         private readonly INodeIdentityService _nodeIdentity;
-        private readonly ITrackerClient _trackerClient;
+        private readonly ISeriesRegistry _trackerClient;
         private readonly IManifestStore _manifestStore;
         private readonly IConfiguration _configuration;
 
         public NodeController(
             INodeIdentityService nodeIdentity,
-            ITrackerClient trackerClient,
+            ISeriesRegistry trackerClient,
             IManifestStore manifestStore,
             IConfiguration configuration)
         {

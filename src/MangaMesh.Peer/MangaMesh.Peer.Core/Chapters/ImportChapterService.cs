@@ -1,4 +1,4 @@
-﻿using MangaMesh.Shared.Helpers;
+using MangaMesh.Shared.Helpers;
 using MangaMesh.Shared.Services;
 using NSec.Cryptography;
 using MangaMesh.Peer.Core.Manifests;
@@ -8,7 +8,7 @@ using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Peer.Core.Node;
 using MangaMesh.Shared.Models;
-using System.IO.Compression;
+using Microsoft.Extensions.Logging;
 
 namespace MangaMesh.Peer.Core.Chapters
 {
@@ -16,145 +16,87 @@ namespace MangaMesh.Peer.Core.Chapters
     {
         private readonly IBlobStore _blobStore;
         private readonly IManifestStore _manifestStore;
-        private readonly ITrackerClient _trackerClient;
+        private readonly ISeriesRegistry _seriesRegistry;
         private readonly IKeyStore _keyStore;
         private readonly INodeIdentity _nodeIdentity;
-        private readonly IKeyPairService _keyPairService;
         private readonly IChunkIngester _chunkIngester;
+        private readonly ITrackerPublisher _trackerPublisher;
+        private readonly IEnumerable<IChapterSourceReader> _sourceReaders;
+        private readonly IImageFormatProvider _imageFormats;
+        private readonly IManifestSigningService _manifestSigning;
+        private readonly ILogger<ImportChapterService> _logger;
 
         public ImportChapterService(
             IBlobStore blobStore,
             IManifestStore manifestStore,
-            ITrackerClient trackerClient,
+            ISeriesRegistry seriesRegistry,
             IKeyStore keyStore,
             INodeIdentity nodeIdentity,
-            IKeyPairService keyPairService,
-            IChunkIngester chunkIngester)
+            IChunkIngester chunkIngester,
+            ITrackerPublisher trackerPublisher,
+            IEnumerable<IChapterSourceReader> sourceReaders,
+            IImageFormatProvider imageFormats,
+            IManifestSigningService manifestSigning,
+            ILogger<ImportChapterService> logger)
         {
             _blobStore = blobStore;
             _manifestStore = manifestStore;
-            _trackerClient = trackerClient;
+            _seriesRegistry = seriesRegistry;
             _keyStore = keyStore;
             _nodeIdentity = nodeIdentity;
-            _keyPairService = keyPairService;
             _chunkIngester = chunkIngester;
+            _trackerPublisher = trackerPublisher;
+            _sourceReaders = sourceReaders;
+            _imageFormats = imageFormats;
+            _manifestSigning = manifestSigning;
+            _logger = logger;
         }
 
         public async Task<ImportChapterResult> ImportAsync(ImportChapterRequest request, CancellationToken ct = default)
         {
+            var reader = _sourceReaders.FirstOrDefault(r => r.CanRead(request.SourceDirectory))
+                ?? throw new DirectoryNotFoundException($"Source path not found or unsupported: {request.SourceDirectory}");
+
             List<Shared.Models.ChapterFileEntry> entries = new();
             var pageManifestHashes = new List<BlobHash>();
             long totalSize = 0;
 
-            if (Directory.Exists(request.SourceDirectory))
+            await foreach (var (name, content) in reader.ReadFilesAsync(request.SourceDirectory, ct))
             {
-                // Directory mode
-                var files = Directory.GetFiles(request.SourceDirectory)
-                    .Where(f => IsImageFile(f))
-                    .OrderBy(f => f)
-                    .ToArray();
-
-                if (files.Length == 0)
-                    throw new InvalidOperationException("No valid image files found in source folder.");
-
-                foreach (var file in files)
+                using (content)
                 {
-                    using var stream = File.OpenRead(file);
-                    var mimeType = GetMimeType(file);
-
-                    // ChunkIngester splits the file, stores chunks, creates PageManifest, stores PageManifest
-                    var (pageManifest, pageHash) = await _chunkIngester.IngestAsync(stream, mimeType);
+                    var mimeType = _imageFormats.GetMimeType(name);
+                    var (pageManifest, pageHash) = await _chunkIngester.IngestAsync(content, mimeType);
 
                     pageManifestHashes.Add(new BlobHash(pageHash));
                     totalSize += pageManifest.FileSize;
 
                     entries.Add(new Shared.Models.ChapterFileEntry
                     {
-                        Hash = pageHash, // This is now the hash of the PageManifest
-                        Path = Path.GetFileName(file),
+                        Hash = pageHash,
+                        Path = name,
                         Size = pageManifest.FileSize
                     });
                 }
             }
-            else if (File.Exists(request.SourceDirectory))
-            {
-                var ext = Path.GetExtension(request.SourceDirectory).ToLowerInvariant();
-                if (ext == ".zip" || ext == ".cbz")
-                {
-                    // Zip mode
-                    using var stream = File.OpenRead(request.SourceDirectory);
-                    using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
 
-                    var zipEntries = archive.Entries
-                        .Where(e => IsImageFile(e.FullName) && e.Length > 0)
-                        .OrderBy(e => e.FullName)
-                        .ToArray();
+            // Register series to get authoritative ID and title
+            var (seriesId, seriesTitle) = await _seriesRegistry.RegisterSeriesAsync(request.Source, request.ExternalMangaId);
 
-                    if (zipEntries.Length == 0)
-                        throw new InvalidOperationException("No valid image files found in zip archive.");
-
-                    foreach (var entry in zipEntries)
-                    {
-                        using var entryStream = entry.Open();
-                        // We need to copy to a memory stream or let ChunkIngester handle non-seekable if it supports it.
-                        // ChunkIngester likely needs seekable stream if it does chunking strategies, but let's check.
-                        // Assuming ChunkIngester handles it, or we copy to MemoryStream. 
-                        // To be safe and since pages are usually small, let's copy to MemoryStream if needed.
-                        // Actually, standard ZipArchive entries are not seekable.
-                        using var memStream = new MemoryStream();
-                        await entryStream.CopyToAsync(memStream);
-                        memStream.Position = 0;
-
-                        var mimeType = GetMimeType(entry.Name);
-                        var (pageManifest, pageHash) = await _chunkIngester.IngestAsync(memStream, mimeType);
-
-                        pageManifestHashes.Add(new BlobHash(pageHash));
-                        totalSize += pageManifest.FileSize;
-
-                        entries.Add(new Shared.Models.ChapterFileEntry
-                        {
-                            Hash = pageHash,
-                            Path = entry.Name, // Use simple name or full path? standard usually flat or relative. 
-                                               // Let's use entry.Name (filename) to flatten, or entry.FullName if we want to preserve structure (but web readers often prefer flat).
-                                               // Let's use Name for now.
-                            Size = pageManifest.FileSize
-                        });
-                    }
-                }
-                else
-                {
-                    throw new InvalidOperationException("Unsupported file type. Please provide a Directory, .zip, or .cbz file.");
-                }
-            }
-            else
-            {
-                throw new DirectoryNotFoundException($"Source path not found: {request.SourceDirectory}");
-            }
-
-            // Step 2.1: Register Series to get authoritative ID and Title
-            var (seriesId, seriesTitle) = await _trackerClient.RegisterSeriesAsync(request.Source, request.ExternalMangaId);
-
-
-            // Step 3: Create Chapter Manifest (v2)
             var keyPair = await _keyStore.GetAsync();
 
             var title = request.DisplayName;
             if (!string.IsNullOrEmpty(seriesTitle) && !title.Contains(seriesTitle, StringComparison.OrdinalIgnoreCase))
             {
                 if (title.Contains(request.ExternalMangaId))
-                {
                     title = title.Replace(request.ExternalMangaId, seriesTitle);
-                }
                 else
-                {
                     title = $"{seriesTitle} {title}";
-                }
             }
-
 
             Shared.Models.ChapterManifest chapterManifest = new()
             {
-                SchemaVersion = 2, // V2 for Chunk support
+                SchemaVersion = 2,
                 ChapterNumber = request.ChapterNumber,
                 CreatedUtc = new DateTime(DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, DateTimeKind.Utc),
                 ChapterId = seriesId + ":" + request.ChapterNumber.ToString(),
@@ -175,78 +117,48 @@ namespace MangaMesh.Peer.Core.Chapters
             if (isManifestExisting)
                 throw new InvalidOperationException("Manifest already exists");
 
-            if (!isManifestExisting)
+            // Save unsigned manifest first
+            await _manifestStore.SaveAsync(hash, chapterManifest);
+
+            // Sign manifest
+            byte[] privateKeyBytes = Convert.FromBase64String(keyPair.PrivateKeyBase64);
+            var key = Key.Import(SignatureAlgorithm.Ed25519, privateKeyBytes, KeyBlobFormat.RawPrivateKey);
+            var signedManifest = _manifestSigning.SignManifest(chapterManifest, key);
+
+            // Publish — challenge-response auth handled by TrackerPublisher
+            var announceRequest = new Shared.Models.AnnounceManifestRequest
             {
-                // Step 4: save manifest
-                await _manifestStore.SaveAsync(hash, chapterManifest);
+                NodeId = Convert.ToHexString(_nodeIdentity.NodeId).ToLowerInvariant(),
+                ManifestHash = hash,
+                SchemaVersion = chapterManifest.SchemaVersion,
+                SeriesId = chapterManifest.SeriesId,
+                ChapterNumber = chapterManifest.ChapterNumber,
+                Language = chapterManifest.Language,
+                ReleaseType = request.ReleaseType,
+                Source = request.Source,
+                ExternalMangaId = request.ExternalMangaId,
+                ChapterId = chapterManifest.ChapterId,
+                Title = chapterManifest.Title,
+                ScanGroup = chapterManifest.ScanGroup,
+                TotalSize = chapterManifest.TotalSize,
+                CreatedUtc = chapterManifest.CreatedUtc,
+                Signature = signedManifest.Signature,
+                PublicKey = signedManifest.PublisherPublicKey,
+                SignedBy = chapterManifest.SignedBy,
+                Files = (List<Shared.Models.ChapterFileEntry>)chapterManifest.Files
+            };
 
-                // Step 5: publish manifest to trackers
+            await _trackerPublisher.PublishManifestAsync(announceRequest, ct);
 
-                byte[] privateKeyBytes = Convert.FromBase64String(keyPair.PrivateKeyBase64);
+            // Re-save with signature
+            chapterManifest = chapterManifest with { Signature = signedManifest.Signature };
+            await _manifestStore.SaveAsync(hash, chapterManifest);
 
-                var key = Key.Import(
-                    SignatureAlgorithm.Ed25519,
-                    privateKeyBytes,
-                    KeyBlobFormat.RawPrivateKey);
-
-                var signedManifest = ManifestSigningService.SignManifest(chapterManifest, key);
-
-                // Step 5.2 publish to trackers
-                var announceRequest = new Shared.Models.AnnounceManifestRequest
-                {
-                    NodeId = Convert.ToHexString(_nodeIdentity.NodeId).ToLowerInvariant(),
-                    ManifestHash = hash,
-                    SchemaVersion = chapterManifest.SchemaVersion,
-                    SeriesId = chapterManifest.SeriesId,
-                    ChapterNumber = chapterManifest.ChapterNumber,
-                    Language = chapterManifest.Language,
-                    ReleaseType = request.ReleaseType,
-                    Source = request.Source,
-                    ExternalMangaId = request.ExternalMangaId,
-
-                    // Added fields for verification
-                    ChapterId = chapterManifest.ChapterId,
-                    Title = chapterManifest.Title,
-                    ScanGroup = chapterManifest.ScanGroup,
-                    TotalSize = chapterManifest.TotalSize,
-                    CreatedUtc = chapterManifest.CreatedUtc,
-                    Signature = signedManifest.Signature,
-                    PublicKey = signedManifest.PublisherPublicKey,
-                    SignedBy = chapterManifest.SignedBy,
-                    Files = (List<Shared.Models.ChapterFileEntry>)chapterManifest.Files
-                };
-
-                await AnnounceWithRetryAsync(announceRequest);
-
-                // Step 6: update manifest with signature details before returning/saving if needed
-
-                // Re-save with signature
-                chapterManifest = chapterManifest with
-                {
-                    Signature = signedManifest.Signature
-                };
-
-                await _manifestStore.SaveAsync(hash, chapterManifest);
-            }
-
-            // Step 6: return result
             return new ImportChapterResult
             {
                 ManifestHash = hash,
                 FileCount = entries.Count,
                 AlreadyExists = isManifestExisting
-            };
-        }
-
-        private static string GetMimeType(string path)
-        {
-            var ext = Path.GetExtension(path)?.ToLowerInvariant();
-            return ext switch
-            {
-                ".jpg" or ".jpeg" => "image/jpeg",
-                ".png" => "image/png",
-                ".webp" => "image/webp",
-                _ => "application/octet-stream"
             };
         }
 
@@ -259,7 +171,7 @@ namespace MangaMesh.Peer.Core.Chapters
             if (string.IsNullOrEmpty(manifest.Signature) || string.IsNullOrEmpty(manifest.PublicKey))
                 throw new InvalidOperationException("Manifest does not contain signature data. Cannot re-announce.");
 
-            await AnnounceWithRetryAsync(new Shared.Models.AnnounceManifestRequest
+            await _trackerPublisher.PublishManifestAsync(new Shared.Models.AnnounceManifestRequest
             {
                 NodeId = nodeId,
                 ManifestHash = hash,
@@ -267,9 +179,7 @@ namespace MangaMesh.Peer.Core.Chapters
                 SeriesId = manifest.SeriesId,
                 ChapterNumber = manifest.ChapterNumber,
                 Language = manifest.Language,
-                ReleaseType = ReleaseType.VerifiedScanlation, // Assuming VerifiedScanlation for signed manifests
-
-                // Verification fields
+                ReleaseType = ReleaseType.VerifiedScanlation,
                 ChapterId = manifest.ChapterId,
                 Title = manifest.Title,
                 ScanGroup = manifest.ScanGroup,
@@ -279,63 +189,6 @@ namespace MangaMesh.Peer.Core.Chapters
                 PublicKey = manifest.PublicKey,
                 Files = (List<Shared.Models.ChapterFileEntry>)manifest.Files
             });
-        }
-
-        private static bool IsImageFile(string path)
-        {
-            var ext = Path.GetExtension(path)?.ToLowerInvariant();
-            return ext is ".jpg" or ".jpeg" or ".png" or ".webp";
-        }
-
-        private async Task AnnounceWithRetryAsync(Shared.Models.AnnounceManifestRequest request)
-        {
-            // 1. Get Identity Keys
-            var keys = await _keyStore.GetAsync();
-            if (keys == null)
-            {
-                throw new InvalidOperationException("Cannot announce manifest: No identity keys found.");
-            }
-
-            // 2. Request Challenge
-            var challenge = await _trackerClient.CreateChallengeAsync(keys.PublicKeyBase64);
-
-            // 3. Solve Challenge
-            var signature = _keyPairService.SolveChallenge(challenge.Nonce, keys.PrivateKeyBase64);
-
-            // 3.5. Register node with tracker (required before announcing manifests)
-            try
-            {
-                //// Get all manifests this node hosts
-                //var manifests = await _manifestStore.GetAllAsync();
-                //var manifestHashes = manifests.Select(m => m.Value).ToList();
-
-                //var announceRequest = new Shared.Models.AnnounceRequest(
-                //    request.NodeId,
-                //    manifestHashes);
-
-                //await _trackerClient.AnnounceAsync(announceRequest);
-                //Console.WriteLine($"Node {request.NodeId} registered with {manifestHashes.Count} manifests");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Warning: Failed to register node: {ex.Message}");
-                // Continue anyway - node might already be registered
-            }
-
-            // 4. Authorize Manifest
-            var authRequest = new Shared.Models.AuthorizeManifestRequest
-            {
-                ChallengeId = challenge.ChallengeId,
-                SignatureBase64 = signature,
-                ManifestHash = request.ManifestHash.Value,
-                NodeId = request.NodeId,
-                PublicKeyBase64 = keys.PublicKeyBase64
-            };
-
-            await _trackerClient.AuthorizeManifestAsync(authRequest);
-
-            // 5. Announce Manifest (Tracker will check authorization)
-            await _trackerClient.AnnounceManifestAsync(request);
         }
     }
 }

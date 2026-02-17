@@ -41,7 +41,8 @@ builder.Services.AddSingleton<IMangaMetadataProvider>(sp =>
     new MangaDexMetadataProvider(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(MangaDexMetadataProvider)),
         "lemonbrown",
-        "QGBq2Wi2JDrHfKR"
+        "QGBq2Wi2JDrHfKR",
+        sp.GetRequiredService<ILogger<MangaDexMetadataProvider>>()
     ));
 
 builder.Services.AddCors(options =>

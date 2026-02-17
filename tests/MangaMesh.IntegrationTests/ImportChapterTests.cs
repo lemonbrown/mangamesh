@@ -19,6 +19,7 @@ using Index::MangaMesh.Index.Api.Stores;
 using Index::MangaMesh.Index.Api.Services;
 using MangaMesh.Shared.Stores;
 using MangaMesh.Shared.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MangaMesh.IntegrationTests
 {
@@ -77,7 +78,7 @@ namespace MangaMesh.IntegrationTests
             _mockKeyStore = new Mock<IKeyStore>();
 
             // 1. Setup Peer Dependencies
-            _keyPairService = new KeyPairService(_mockKeyStore.Object); // Real service
+            _keyPairService = new KeyPairService(_mockKeyStore.Object, NullLogger<MangaMesh.Peer.Core.Keys.KeyPairService>.Instance); // Real service
             _peerKeys = await _keyPairService.GenerateKeyPairBase64Async();
 
             _mockKeyStore.Setup(s => s.GetAsync()).ReturnsAsync(new PublicPrivateKeyPair { PublicKeyBase64 = _peerKeys.PublicKeyBase64, PrivateKeyBase64 = _peerKeys.PrivateKeyBase64 });
@@ -122,14 +123,33 @@ namespace MangaMesh.IntegrationTests
             }
 
             // 4. Instantiate Service
+            // TrackerPublisher encapsulates the challenge-response auth flow
+            var trackerPublisher = new TrackerPublisher(
+                _trackerClient,  // ITrackerChallengeClient
+                _trackerClient,  // IManifestAnnouncer
+                _mockKeyStore.Object,
+                _keyPairService,
+                NullLogger<TrackerPublisher>.Instance);
+
+            var formatProvider = new DefaultImageFormatProvider();
+            var sourceReaders = new IChapterSourceReader[]
+            {
+                new DirectorySourceReader(formatProvider),
+                new ZipSourceReader(formatProvider)
+            };
+
             _importService = new ImportChapterService(
                 _mockBlobStore.Object,
                 _mockManifestStore.Object,
-                _trackerClient,
+                _trackerClient,  // ISeriesRegistry
                 _mockKeyStore.Object,
                 _mockNodeIdentity.Object,
-                _keyPairService,
-                _chunkIngester
+                _chunkIngester,
+                trackerPublisher,
+                sourceReaders,
+                formatProvider,
+                new ManifestSigningService(),
+                NullLogger<ImportChapterService>.Instance
             );
         }
 

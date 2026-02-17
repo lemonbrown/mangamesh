@@ -1,0 +1,17 @@
+{
+    "chapterId": "ch-001",
+    "seriesId": "test-series-001",
+    "chapterNumber": "1",
+    "title": "The Beginning",
+    "manifests": [
+        {
+            "manifestHash": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+            "language": "en",
+            "scanGroup": "TestScans",
+            "isVerified": false,
+            "quality": "HQ",
+            "uploadedAt": "2026-01-15T10:00:00Z"
+        }
+    ],
+    "pages": []
+}

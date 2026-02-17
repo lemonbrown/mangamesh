@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -7,6 +8,7 @@ using Moq;
 using System.IO;
 using MangaMesh.Peer.Core.Transport;
 using MangaMesh.Peer.Core.Keys;
+using MangaMesh.Peer.Tests.Helpers;
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Node;
@@ -199,24 +201,7 @@ namespace MangaMesh.Peer.Tests
 
         private (DhtNode, TcpTransport) CreateNode(int port)
         {
-            var storage = new InMemoryDhtStorage();
-            var keyStore = new InMemoryKeyStore();
-            var keyPairService = new KeyPairService(keyStore);
-            keyPairService.GenerateKeyPairBase64Async().Wait();
-
-            var mockConfig = new Mock<Microsoft.Extensions.Configuration.IConfiguration>();
-            var identity = new NodeIdentity(keyPairService, mockConfig.Object, keyStore);
-            var transport = new TcpTransport(port);
-            
-            var mockKeyStore = new Mock<IKeyStore>(); // Need proper KeyStore mock? 
-            // DhtNode constructor expects IKeyStore. The InMemoryKeyStore below implements it.
-            // Oh, CreateNode uses InMemoryKeyStore.
-
-            var mockTracker = new Mock<MangaMesh.Peer.Core.Tracker.ITrackerClient>();
-            var connectionInfo = new ConsoleNodeConnectionInfoProvider();
-
-            var node = new DhtNode(identity, transport, storage, keyPairService, keyStore, mockTracker.Object, connectionInfo);
-            
+            var (node, transport) = TestNodeFactory.CreateNode(port);
             _nodes.Add(node);
             return (node, transport);
         }
@@ -250,15 +235,5 @@ namespace MangaMesh.Peer.Tests
             }
         }
 
-        private class InMemoryKeyStore : IKeyStore
-        {
-            private PublicPrivateKeyPair? _pair;
-            public Task<PublicPrivateKeyPair?> GetAsync() => Task.FromResult(_pair);
-            public Task SaveAsync(string pub, string priv) 
-            {
-                _pair = new PublicPrivateKeyPair { PublicKeyBase64 = pub, PrivateKeyBase64 = priv };
-                return Task.CompletedTask;
-            }
-        }
     }
 }

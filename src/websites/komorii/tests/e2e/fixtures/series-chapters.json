@@ -1,0 +1,16 @@
+[
+    {
+        "chapterId": "ch-001",
+        "chapterNumber": "1",
+        "volume": "1",
+        "title": "The Beginning",
+        "uploadedAt": "2026-01-15T10:00:00Z"
+    },
+    {
+        "chapterId": "ch-002",
+        "chapterNumber": "2",
+        "volume": "1",
+        "title": "Return",
+        "uploadedAt": "2026-02-01T10:00:00Z"
+    }
+]

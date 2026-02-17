@@ -10,8 +10,12 @@ using System.Threading.Tasks;
 
 namespace MangaMesh.Shared.Services
 {
-    public class ManifestSigningService
+    public class ManifestSigningService : IManifestSigningService
     {
+        byte[] IManifestSigningService.SerializeCanonical(ChapterManifest manifest) => SerializeCanonical(manifest);
+        SignedChapterManifest IManifestSigningService.SignManifest(ChapterManifest manifest, Key privateKey) => SignManifest(manifest, privateKey);
+        void IManifestSigningService.VerifySignedManifest(SignedChapterManifest signed) => VerifySignedManifest(signed);
+
         public static byte[] SerializeCanonical(ChapterManifest manifest)
         {
             var options = new JsonSerializerOptions

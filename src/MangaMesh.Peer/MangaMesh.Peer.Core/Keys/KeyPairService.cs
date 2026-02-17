@@ -1,19 +1,17 @@
-﻿using NSec.Cryptography;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using NSec.Cryptography;
 
 namespace MangaMesh.Peer.Core.Keys
 {
     public class KeyPairService : IKeyPairService
     {
         private readonly IKeyStore _keyStore;
+        private readonly ILogger<KeyPairService> _logger;
 
-        public KeyPairService(IKeyStore keyStore)
+        public KeyPairService(IKeyStore keyStore, ILogger<KeyPairService> logger)
         {
             _keyStore = keyStore;
+            _logger = logger;
         }
 
         public KeyPairResult GenerateKeyPairBase64()
@@ -37,68 +35,34 @@ namespace MangaMesh.Peer.Core.Keys
         public async Task<KeyPairResult> GenerateKeyPairBase64Async()
         {
             var result = GenerateKeyPairBase64();
-
-            // ✅ Safe to await now
             await _keyStore.SaveAsync(result.PublicKeyBase64, result.PrivateKeyBase64);
-
             return result;
         }
 
         public string SolveChallenge(string nonceBase64, string privateKeyBase64)
         {
-
-            // --------------------------
-            // 2️⃣ Decode inputs
-            // --------------------------
             byte[] privateKeyBytes = Convert.FromBase64String(privateKeyBase64);
             byte[] nonceBytes = Convert.FromBase64String(nonceBase64);
 
-            // --------------------------
-            // 3️⃣ Import private key (raw)
-            // --------------------------
-            var creationParams = new KeyCreationParameters
-            {
-                ExportPolicy = KeyExportPolicies.AllowPlaintextExport
-            };
-
             using var key = Key.Import(SignatureAlgorithm.Ed25519, privateKeyBytes, KeyBlobFormat.RawPrivateKey);
 
-            // Get public key for debugging
             var publicKeyBytes = key.Export(KeyBlobFormat.RawPublicKey);
 
-            Console.WriteLine($"=== Signing Debug ===");
-            Console.WriteLine($"Nonce (base64): {nonceBase64}");
-            Console.WriteLine($"Nonce (hex): {Convert.ToHexString(nonceBytes)}");
-            Console.WriteLine($"Nonce length: {nonceBytes.Length} bytes");
-            Console.WriteLine($"Private key length: {privateKeyBytes.Length} bytes");
-            Console.WriteLine($"Public key (base64): {Convert.ToBase64String(publicKeyBytes)}");
-            Console.WriteLine($"Public key (hex): {Convert.ToHexString(publicKeyBytes)}");
-            Console.WriteLine($"Public key length: {publicKeyBytes.Length} bytes");
+            _logger.LogDebug("Signing challenge. Nonce: {NonceHex}, PublicKey: {PublicKeyHex}",
+                Convert.ToHexString(nonceBytes),
+                Convert.ToHexString(publicKeyBytes));
 
-            // --------------------------
-            // 4️⃣ Sign the nonce
-            // --------------------------
             byte[] signatureBytes = SignatureAlgorithm.Ed25519.Sign(key, nonceBytes);
 
             if (signatureBytes.Length != 64)
             {
-                Console.WriteLine($"ERROR: Signature length is {signatureBytes.Length}, expected 64 bytes!");
+                _logger.LogError("Unexpected signature length: {Length} (expected 64)", signatureBytes.Length);
                 return "";
             }
 
-            string signatureBase64 = Convert.ToBase64String(signatureBytes);
+            _logger.LogDebug("Signature produced: {SignatureHex}", Convert.ToHexString(signatureBytes));
 
-            Console.WriteLine($"Signature (base64): {signatureBase64}");
-            Console.WriteLine($"Signature (hex): {Convert.ToHexString(signatureBytes)}");
-            Console.WriteLine($"Signature length: {signatureBytes.Length} bytes");
-
-            // Self-verify the signature locally
-            var publicKeyBase64 = Convert.ToBase64String(publicKeyBytes);
-            var selfVerify = Verify(publicKeyBase64, signatureBase64, nonceBase64);
-            Console.WriteLine($"Self-verification result: {selfVerify}");
-            Console.WriteLine($"====================");
-
-            return signatureBase64;
+            return Convert.ToBase64String(signatureBytes);
         }
 
         public bool Verify(string publicKeyBase64, string signatureBase64, string nonceBase64)
@@ -107,15 +71,15 @@ namespace MangaMesh.Peer.Core.Keys
             {
                 byte[] publicKeyBytes;
                 try { publicKeyBytes = Convert.FromBase64String(publicKeyBase64); }
-                catch { Console.WriteLine("Verify: Invalid PublicKey Base64"); throw; }
+                catch { _logger.LogWarning("Verify: Invalid PublicKey Base64"); throw; }
 
                 byte[] signatureBytes;
                 try { signatureBytes = Convert.FromBase64String(signatureBase64); }
-                catch { Console.WriteLine($"Verify: Invalid Signature Base64: '{signatureBase64}'"); throw; }
+                catch { _logger.LogWarning("Verify: Invalid Signature Base64: {Sig}", signatureBase64); throw; }
 
                 byte[] nonceBytes;
                 try { nonceBytes = Convert.FromBase64String(nonceBase64); }
-                catch { Console.WriteLine("Verify: Invalid Nonce Base64"); throw; }
+                catch { _logger.LogWarning("Verify: Invalid Nonce Base64"); throw; }
 
                 var algorithm = SignatureAlgorithm.Ed25519;
                 var publicKey = NSec.Cryptography.PublicKey.Import(algorithm, publicKeyBytes, KeyBlobFormat.RawPublicKey);
@@ -124,7 +88,7 @@ namespace MangaMesh.Peer.Core.Keys
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Verify Exception: {ex.Message}");
+                _logger.LogWarning(ex, "Verify failed");
                 return false;
             }
         }

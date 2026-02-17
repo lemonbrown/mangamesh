@@ -1,5 +1,7 @@
 using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Configuration;
 using MangaMesh.Shared.Models;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,18 +21,19 @@ namespace MangaMesh.Peer.Core.Content
     public class ChunkIngester : IChunkIngester
     {
         private readonly IBlobStore _blobStore;
-        private const int DefaultChunkSize = 262144; // 256KB
+        private readonly int _chunkSize;
 
-        public ChunkIngester(IBlobStore blobStore)
+        public ChunkIngester(IBlobStore blobStore, IOptions<DhtOptions> options)
         {
             _blobStore = blobStore;
+            _chunkSize = options.Value.ChunkSizeBytes;
         }
 
         public async Task<(PageManifest Manifest, string ManifestHash)> IngestAsync(Stream dataStream, string mimeType)
         {
             var fileSize = dataStream.Length;
             var chunks = new List<string>();
-            var buffer = new byte[DefaultChunkSize];
+            var buffer = new byte[_chunkSize];
             int bytesRead;
 
             // Ensure stream is at beginning
@@ -68,7 +71,7 @@ namespace MangaMesh.Peer.Core.Content
                 Version = 1,
                 MimeType = mimeType,
                 FileSize = fileSize,
-                ChunkSize = DefaultChunkSize,
+                ChunkSize = _chunkSize,
                 Chunks = chunks
             };
 

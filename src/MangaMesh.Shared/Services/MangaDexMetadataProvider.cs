@@ -1,4 +1,5 @@
 using MangaMesh.Shared.Models;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
 using MangaMesh.Shared.Models.MangaDex;
@@ -10,14 +11,16 @@ namespace MangaMesh.Shared.Services
         private readonly HttpClient _httpClient;
         private readonly string _username;
         private readonly string _password;
+        private readonly ILogger<MangaDexMetadataProvider> _logger;
         private string? _sessionToken;
         private DateTime _tokenExpiry = DateTime.MinValue;
 
-        public MangaDexMetadataProvider(HttpClient httpClient, string username, string password)
+        public MangaDexMetadataProvider(HttpClient httpClient, string username, string password, ILogger<MangaDexMetadataProvider> logger)
         {
             _httpClient = httpClient;
             _username = username;
             _password = password;
+            _logger = logger;
 
             if (_httpClient.BaseAddress == null)
             {
@@ -62,13 +65,13 @@ namespace MangaMesh.Shared.Services
                 }
                 else
                 {
-                    // Log failure?
-                    Console.WriteLine($"MangaDex Login Failed: {response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+                    _logger.LogError("MangaDex login failed: {Status} {Body}",
+                        response.StatusCode, await response.Content.ReadAsStringAsync());
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"MangaDex Auth Error: {ex.Message}");
+                _logger.LogError(ex, "MangaDex auth error");
             }
         }
 
@@ -98,7 +101,7 @@ namespace MangaMesh.Shared.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Search Failed: {ex.Message}");
+                _logger.LogError(ex, "MangaDex search failed for query: {Query}", query);
                 return Array.Empty<MangaSearchResult>();
             }
         }
@@ -195,8 +198,8 @@ namespace MangaMesh.Shared.Services
                 }
                 else
                 {
-                    // Log failure?
-                    Console.WriteLine($"MangaDex Login Failed: {responseData.StatusCode} {await responseData.Content.ReadAsStringAsync()}");
+                    _logger.LogError("MangaDex chapter fetch failed: {Status} {Body}",
+                        responseData.StatusCode, await responseData.Content.ReadAsStringAsync());
                     return null;
                 }
             }

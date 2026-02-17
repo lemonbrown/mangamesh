@@ -15,13 +15,13 @@ namespace MangaMesh.Peer.Core.Node
 
     public sealed class PeerFetcher : IPeerFetcher
     {
-        private readonly ITrackerClient _trackerClient;
+        private readonly IPeerLocator _trackerClient;
         private readonly IBlobStore _blobStore;
         private readonly IManifestStore _manifestStore;
         private readonly HttpClient _httpClient;
 
         public PeerFetcher(
-            ITrackerClient trackerClient,
+            IPeerLocator trackerClient,
             IBlobStore blobStore,
             IManifestStore manifestStore)
         {

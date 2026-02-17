@@ -1,22 +1,16 @@
-﻿using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NSec.Cryptography;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Text.Json;
 using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Transport;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Helpers;
 using MangaMesh.Peer.Core.Tracker;
-using MangaMesh.Shared.Models; // For AnnounceRequest
+using MangaMesh.Shared.Models;
+using Microsoft.Extensions.Logging;
 
 namespace MangaMesh.Peer.Core.Node
 {
-
     public class DhtNode : IDhtNode
     {
         public struct ProviderInfo
@@ -31,44 +25,50 @@ namespace MangaMesh.Peer.Core.Node
 
         private CancellationTokenSource? _maintenanceToken;
 
-        private IKeyPairService _keypairService;
+        private readonly IKeyPairService _keypairService;
+        private readonly IKeyStore _keyStore;
+        private readonly IRoutingTable _routingTable;
+        private readonly IBootstrapNodeProvider _bootstrapNodeProvider;
+        private readonly IDhtRequestTracker _requestTracker;
+        private readonly INodeAnnouncer _tracker;
+        private readonly INodeConnectionInfoProvider _connectionInfo;
+        private readonly ILogger<DhtNode> _logger;
 
-        private IKeyStore _keyStore;
+        private bool _running = false;
 
         public INodeIdentity Identity { get; private set; }
         public ITransport Transport { get; private set; }
         public IDhtStorage Storage { get; private set; }
-        public List<KBucket> RoutingTable { get; private set; } = new();
-        private bool _running = false;
+        public IRoutingTable RoutingTable => _routingTable;
 
-
-        private ITrackerClient _tracker;
-        private INodeConnectionInfoProvider _connectionInfo;
-
-        public DhtNode(INodeIdentity identity, ITransport transport, IDhtStorage storage, IKeyPairService keyPairService, IKeyStore keyStore, ITrackerClient tracker, INodeConnectionInfoProvider connectionInfo)
+        public DhtNode(
+            INodeIdentity identity,
+            ITransport transport,
+            IDhtStorage storage,
+            IRoutingTable routingTable,
+            IBootstrapNodeProvider bootstrapNodeProvider,
+            IDhtRequestTracker requestTracker,
+            IKeyPairService keyPairService,
+            IKeyStore keyStore,
+            INodeAnnouncer tracker,
+            INodeConnectionInfoProvider connectionInfo,
+            ILogger<DhtNode> logger)
         {
-            _tracker = tracker;
-            _connectionInfo = connectionInfo;
-            _keypairService = keyPairService;
             Identity = identity;
             Transport = transport;
             Storage = storage;
+            _routingTable = routingTable;
+            _bootstrapNodeProvider = bootstrapNodeProvider;
+            _requestTracker = requestTracker;
+            _keypairService = keyPairService;
             _keyStore = keyStore;
-            // Initialize 256 k-buckets for 256-bit node IDs
-            for (int i = 0; i < 256; i++)
-                RoutingTable.Add(new KBucket());
+            _tracker = tracker;
+            _connectionInfo = connectionInfo;
+            _logger = logger;
         }
 
+        private readonly List<RoutingEntry> _knownBootstrapNodes = new();
 
-        /// <summary>
-        /// Start the DHT node and maintenance loops.
-        /// </summary>
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, TaskCompletionSource<DhtMessage>> _pendingRequests = new();
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, TaskCompletionSource<ContentMessage>> _pendingContentRequests = new();
-
-        /// <summary>
-        /// Start the DHT node and maintenance loops.
-        /// </summary>
         public void StartWithMaintenance(bool enableBootstrap = true, List<RoutingEntry>? bootstrapNodes = null)
         {
             Start(enableBootstrap, bootstrapNodes);
@@ -76,21 +76,12 @@ namespace MangaMesh.Peer.Core.Node
             Task.Run(() => MaintenanceLoopAsync(_maintenanceToken.Token));
         }
 
-        /// <summary>
-        /// Stop the DHT node and maintenance loops.
-        /// </summary>
         public void StopWithMaintenance()
         {
             Stop();
             _maintenanceToken?.Cancel();
         }
 
-        /// <summary>
-        /// Periodic maintenance loop:
-        /// - Re-announce stored content
-        /// - Ping stale nodes
-        /// - Refresh k-buckets
-        /// </summary>
         private async Task MaintenanceLoopAsync(CancellationToken token)
         {
             var lastReannounce = DateTime.UtcNow;
@@ -100,41 +91,24 @@ namespace MangaMesh.Peer.Core.Node
             {
                 var now = DateTime.UtcNow;
 
-                // ---------------------------
-                // Re-announce content
-                // ---------------------------
                 if (now - lastReannounce > _reannounceInterval)
                 {
                     foreach (var content in Storage.GetAllContentHashes())
-                    {
                         await StoreAsync(content);
-                    }
                     lastReannounce = now;
                 }
 
-                // ---------------------------
-                // Ping stale nodes
-                // ---------------------------
                 if (now - lastPing > _pingInterval)
                 {
-                    foreach (var bucket in RoutingTable)
+                    foreach (var entry in _routingTable.GetAll())
                     {
-                        var staleNodes = bucket.Entries
-                            .Where(e => (now - e.LastSeenUtc) > _pingInterval)
-                            .ToList();
-
-                        foreach (var node in staleNodes)
-                        {
-                            await PingAsync(node);
-                        }
+                        if ((now - entry.LastSeenUtc) > _pingInterval)
+                            await PingAsync(entry);
                     }
                     lastPing = now;
                 }
 
-                //Announce to the index
                 await AnnounceToIndexAsync();
-
-
                 await Task.Delay(TimeSpan.FromSeconds(10), token);
             }
         }
@@ -143,80 +117,33 @@ namespace MangaMesh.Peer.Core.Node
         {
             try
             {
-                Console.WriteLine("DhtNode: Announcing to index...");
-                // Use our Transport Port for DHT announcements
-
+                _logger.LogDebug("DhtNode: Announcing to index...");
                 var (ip, _) = await _connectionInfo.GetConnectionInfoAsync();
-                var port = Transport.Port; // Always announce OUR listening port for DHT
+                var port = Transport.Port;
 
-                var manifests = Storage.GetAllContentHashes().Select(h => Convert.ToHexString(h).ToLowerInvariant()).ToList();
-                Console.WriteLine($"DhtNode: Found {manifests.Count} manifests to announce.");
+                var manifests = Storage.GetAllContentHashes()
+                    .Select(h => Convert.ToHexString(h).ToLowerInvariant())
+                    .ToList();
+                _logger.LogDebug("DhtNode: Found {Count} manifests to announce.", manifests.Count);
 
                 var request = new Shared.Models.AnnounceRequest(
                     Convert.ToHexString(Identity.NodeId).ToLowerInvariant(),
-                    manifests
-                );
+                    manifests);
 
                 await _tracker.AnnounceAsync(request);
-                Console.WriteLine("DhtNode: Announcement successful.");
+                _logger.LogDebug("DhtNode: Announcement successful.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to announce to index: {ex.Message}");
-                if (ex.InnerException != null)
-                {
-                    Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
-                }
+                _logger.LogWarning(ex, "Failed to announce to index");
             }
         }
 
-        /// <summary>
-        /// Start the node.
-        /// </summary>
         public void Start(bool enableBootstrap = true, List<RoutingEntry>? overrideBootstrapNodes = null)
         {
             if (_running) return;
 
-            //bootstrap nodes
-            var bootstrapNodes = overrideBootstrapNodes ?? new List<RoutingEntry>();
-
-            if (overrideBootstrapNodes == null)
-            {
-                try
-                {
-                    var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "bootstrap_nodes.yml");
-                    if (File.Exists(configPath))
-                    {
-                        var yaml = File.ReadAllText(configPath);
-                        var deserializer = new YamlDotNet.Serialization.DeserializerBuilder()
-                            .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.CamelCaseNamingConvention.Instance)
-                            .Build();
-
-                        var nodes = deserializer.Deserialize<List<BootstrapNodeConfig>>(yaml);
-
-                        if (nodes != null)
-                        {
-                            foreach (var node in nodes)
-                            {
-                                bootstrapNodes.Add(new RoutingEntry
-                                {
-                                    NodeId = Convert.FromHexString(node.NodeId),
-                                    Address = new NodeAddress(node.Address.Host, node.Address.Port),
-                                    LastSeenUtc = DateTime.UtcNow
-                                });
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Failed to load bootstrap nodes: {ex.Message}");
-                }
-            }
-
-            //ensure keys are available
             var keys = _keyStore.GetAsync().Result;
-
             if (keys == null)
                 _keypairService.GenerateKeyPairBase64Async().Wait();
 
@@ -224,14 +151,33 @@ namespace MangaMesh.Peer.Core.Node
 
             if (enableBootstrap)
             {
-                Task.Run(async () => await BootstrapAsync(bootstrapNodes));
+                Task.Run(async () =>
+                {
+                    List<RoutingEntry> bootstrapNodes;
+                    if (overrideBootstrapNodes != null)
+                    {
+                        bootstrapNodes = overrideBootstrapNodes;
+                    }
+                    else
+                    {
+                        var provided = await _bootstrapNodeProvider.GetBootstrapNodesAsync();
+                        bootstrapNodes = provided.ToList();
+                    }
+
+                    lock (_knownBootstrapNodes)
+                    {
+                        _knownBootstrapNodes.Clear();
+                        _knownBootstrapNodes.AddRange(bootstrapNodes);
+                    }
+
+                    await BootstrapAsync(bootstrapNodes);
+                });
             }
         }
 
         public async Task StoreAsync(byte[] contentHash)
         {
-            // Find k closest nodes (simplified)
-            var closestNodes = FindClosestNodes(contentHash, 20);
+            var closestNodes = _routingTable.FindClosest(contentHash, 20);
             foreach (var node in closestNodes)
             {
                 var message = new DhtMessage
@@ -245,18 +191,44 @@ namespace MangaMesh.Peer.Core.Node
                 };
                 await SendDhtMessageAsync(node.Address, message);
             }
-            // Also store locally
             Storage.StoreContent(contentHash, Identity.NodeId);
         }
 
         public async Task<List<byte[]>> FindValueAsync(byte[] contentHash)
         {
-            // simplified iterative lookup
             var resultNodes = new List<byte[]>();
-            var closestNodes = FindClosestNodes(contentHash, 20);
+            var visited = new HashSet<string>();
+            var nodesToQuery = new List<RoutingEntry>();
 
-            foreach (var node in closestNodes)
+            nodesToQuery.AddRange(_routingTable.FindClosest(contentHash, 20));
+
+            if (nodesToQuery.Count == 0)
             {
+                lock (_knownBootstrapNodes)
+                {
+                    nodesToQuery.AddRange(_knownBootstrapNodes);
+                }
+            }
+
+            nodesToQuery.Sort((a, b) =>
+            {
+                if (a.NodeId == null || a.NodeId.Length == 0) return 1;
+                if (b.NodeId == null || b.NodeId.Length == 0) return -1;
+                return Crypto.XorDistance(a.NodeId, contentHash).CompareTo(Crypto.XorDistance(b.NodeId, contentHash));
+            });
+
+            int queriedCount = 0;
+            const int MaxQueries = 20;
+
+            while (nodesToQuery.Count > 0 && queriedCount < MaxQueries)
+            {
+                var candidate = nodesToQuery.FirstOrDefault(n => !visited.Contains($"{n.Address.Host}:{n.Address.Port}"));
+                if (candidate == null) break;
+
+                visited.Add($"{candidate.Address.Host}:{candidate.Address.Port}");
+                nodesToQuery.Remove(candidate);
+                queriedCount++;
+
                 var message = new DhtMessage
                 {
                     Type = DhtMessageType.FindValue,
@@ -267,30 +239,63 @@ namespace MangaMesh.Peer.Core.Node
                     SenderPort = Transport.Port
                 };
 
-                // Wait for response
-                var response = await SendDhtMessageAsync(node.Address, message, waitForResponse: true);
+                var response = await SendDhtMessageAsync(candidate.Address, message, waitForResponse: true);
 
                 if (response != null)
                 {
+                    if ((candidate.NodeId == null || candidate.NodeId.Length == 0) && response.SenderNodeId?.Length > 0)
+                    {
+                        candidate.NodeId = response.SenderNodeId;
+                        _routingTable.AddOrUpdate(new RoutingEntry
+                        {
+                            NodeId = response.SenderNodeId,
+                            Address = candidate.Address,
+                            LastSeenUtc = DateTime.UtcNow
+                        });
+                    }
+
                     if (response.Type == DhtMessageType.Value)
                     {
                         var providers = JsonSerializer.Deserialize<List<byte[]>>(Encoding.UTF8.GetString(response.Payload));
                         if (providers != null)
-                        {
                             resultNodes.AddRange(providers);
-                        }
+
+                        // Continue searching? Kademlia usually stops if k providers found.
+                        if (resultNodes.Count > 0) break;
                     }
                     else if (response.Type == DhtMessageType.Nodes)
                     {
-                        // Could update closestNodes here for recursive lookup
+                        try
+                        {
+                            var nodesJson = Encoding.UTF8.GetString(response.Payload);
+                            var discovered = JsonSerializer.Deserialize<List<NodeEntry>>(nodesJson,
+                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            if (discovered != null)
+                            {
+                                foreach (var d in discovered)
+                                {
+                                    if (!string.IsNullOrEmpty(d.NodeId) && d.Port > 0)
+                                    {
+                                        var dId = Convert.FromHexString(d.NodeId);
+                                        var newEntry = new RoutingEntry { NodeId = dId, Address = new NodeAddress(d.Host, d.Port), LastSeenUtc = DateTime.UtcNow };
+                                        _routingTable.AddOrUpdate(newEntry);
+                                        if (!visited.Contains($"{d.Host}:{d.Port}")) nodesToQuery.Add(newEntry);
+                                    }
+                                }
+                                nodesToQuery.Sort((a, b) =>
+                                {
+                                    if (a.NodeId == null || a.NodeId.Length == 0) return 1;
+                                    if (b.NodeId == null || b.NodeId.Length == 0) return -1;
+                                    return Crypto.XorDistance(a.NodeId, contentHash).CompareTo(Crypto.XorDistance(b.NodeId, contentHash));
+                                });
+                            }
+                        }
+                        catch { }
                     }
                 }
             }
 
-            // Include local store if present
             resultNodes.AddRange(Storage.GetNodesForContent(contentHash));
-
-            // Deduplicate
             return resultNodes.Distinct(new ByteArrayComparer()).ToList();
         }
 
@@ -299,7 +304,7 @@ namespace MangaMesh.Peer.Core.Node
             message.SenderPort = Transport.Port;
 
             var tcs = new TaskCompletionSource<ContentMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pendingContentRequests[message.RequestId] = tcs;
+            _requestTracker.RegisterContent(message.RequestId, tcs);
 
             try
             {
@@ -315,38 +320,63 @@ namespace MangaMesh.Peer.Core.Node
                 var completed = await Task.WhenAny(tcs.Task, timeoutTask);
 
                 if (completed == tcs.Task)
-                {
                     return await tcs.Task;
-                }
-                else
-                {
-                    _pendingContentRequests.TryRemove(message.RequestId, out _);
-                    return null;
-                }
+
+                _requestTracker.CancelContent(message.RequestId);
+                return null;
             }
             catch
             {
-                _pendingContentRequests.TryRemove(message.RequestId, out _);
+                _requestTracker.CancelContent(message.RequestId);
                 return null;
             }
         }
 
-        // Internal method to feed content messages from handler
         public void HandleContentMessage(ContentMessage message)
         {
-            if (_pendingContentRequests.TryRemove(message.RequestId, out var tcs))
-            {
-                tcs.TrySetResult(message);
-            }
+            _requestTracker.TryCompleteContent(message.RequestId, message);
         }
 
         public async Task<List<ProviderInfo>> FindValueWithAddressAsync(byte[] contentHash)
         {
             var providers = new List<ProviderInfo>();
-            var closestNodes = FindClosestNodes(contentHash, 20);
+            var visited = new HashSet<string>();
+            var nodesToQuery = new List<RoutingEntry>();
 
-            foreach (var node in closestNodes)
+            // Initial set: Closest nodes from routing table
+            nodesToQuery.AddRange(_routingTable.FindClosest(contentHash, 20));
+
+            // Fallback: If routing table is empty (or returns nothing), use bootstrap nodes
+            if (nodesToQuery.Count == 0)
             {
+                lock (_knownBootstrapNodes)
+                {
+                    nodesToQuery.AddRange(_knownBootstrapNodes);
+                }
+            }
+
+            // Sort by distance to target
+            nodesToQuery.Sort((a, b) =>
+            {
+                // Handle missing IDs by pushing them to the end or treating as far
+                if (a.NodeId == null || a.NodeId.Length == 0) return 1;
+                if (b.NodeId == null || b.NodeId.Length == 0) return -1;
+                return Crypto.XorDistance(a.NodeId, contentHash).CompareTo(Crypto.XorDistance(b.NodeId, contentHash));
+            });
+
+            int queriedCount = 0;
+            const int MaxQueries = 20;
+
+            while (nodesToQuery.Count > 0 && queriedCount < MaxQueries)
+            {
+                // Pick best candidate that hasn't been visited
+                var candidate = nodesToQuery.FirstOrDefault(n => !visited.Contains($"{n.Address.Host}:{n.Address.Port}"));
+                if (candidate == null) break;
+
+                visited.Add($"{candidate.Address.Host}:{candidate.Address.Port}");
+                nodesToQuery.Remove(candidate);
+                queriedCount++;
+
                 var message = new DhtMessage
                 {
                     Type = DhtMessageType.FindValue,
@@ -357,37 +387,91 @@ namespace MangaMesh.Peer.Core.Node
                     SenderPort = Transport.Port
                 };
 
-                var response = await SendDhtMessageAsync(node.Address, message, waitForResponse: true);
+                var response = await SendDhtMessageAsync(candidate.Address, message, waitForResponse: true);
 
-                if (response != null && response.Type == DhtMessageType.Value)
+                if (response != null)
                 {
-                    var providerIds = JsonSerializer.Deserialize<List<byte[]>>(Encoding.UTF8.GetString(response.Payload));
-                    if (providerIds != null)
+                    // Opportunistic Update: If we queried a node with unknown ID and it responded, update it
+                    if ((candidate.NodeId == null || candidate.NodeId.Length == 0) && response.SenderNodeId?.Length > 0)
                     {
-                        foreach (var pid in providerIds)
+                        candidate.NodeId = response.SenderNodeId;
+                        _routingTable.AddOrUpdate(new RoutingEntry
                         {
-                            var address = GetAddressForNode(pid);
-                            if (address != null)
+                            NodeId = response.SenderNodeId,
+                            Address = candidate.Address,
+                            LastSeenUtc = DateTime.UtcNow
+                        });
+                    }
+
+                    if (response.Type == DhtMessageType.Value)
+                    {
+                        var providerIds = JsonSerializer.Deserialize<List<byte[]>>(Encoding.UTF8.GetString(response.Payload));
+                        if (providerIds != null)
+                        {
+                            foreach (var pid in providerIds)
                             {
-                                providers.Add(new ProviderInfo { NodeId = pid, Address = address });
-                            }
-                            else if (pid.SequenceEqual(response.SenderNodeId) && !string.IsNullOrEmpty(response.ComputedSenderIp))
-                            {
-                                // The responder is the provider
-                                providers.Add(new ProviderInfo { NodeId = pid, Address = new NodeAddress(response.ComputedSenderIp, response.SenderPort) });
+                                var address = _routingTable.GetAddressForNode(pid);
+                                if (address != null)
+                                {
+                                    providers.Add(new ProviderInfo { NodeId = pid, Address = address });
+                                }
+                                else if (pid.SequenceEqual(response.SenderNodeId) && !string.IsNullOrEmpty(response.ComputedSenderIp))
+                                {
+                                    providers.Add(new ProviderInfo { NodeId = pid, Address = new NodeAddress(response.ComputedSenderIp, response.SenderPort) });
+                                }
                             }
                         }
+                        // Found value! We can return or keep searching for more redundancy. 
+                        // For Peer Discovery, usually finding one set of providers is enough.
+                        if (providers.Count > 0) return providers;
                     }
-                }
-            }
+                    else if (response.Type == DhtMessageType.Nodes)
+                    {
+                        // Iterative Step: Add returned nodes to candidates
+                        try
+                        {
+                            var nodesJson = Encoding.UTF8.GetString(response.Payload);
+                            var discovered = JsonSerializer.Deserialize<List<NodeEntry>>(nodesJson,
+                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            // Local store check
-            var localProviders = Storage.GetNodesForContent(contentHash);
-            foreach (var pid in localProviders)
-            {
-                if (pid.SequenceEqual(Identity.NodeId))
-                {
-                    // We are the provider
+                            if (discovered != null)
+                            {
+                                foreach (var d in discovered)
+                                {
+                                    if (!string.IsNullOrEmpty(d.NodeId) && d.Port > 0)
+                                    {
+                                        var dId = Convert.FromHexString(d.NodeId);
+                                        var newEntry = new RoutingEntry
+                                        {
+                                            NodeId = dId,
+                                            Address = new NodeAddress(d.Host, d.Port), // Assuming Host is IP or resolvable
+                                            LastSeenUtc = DateTime.UtcNow
+                                        };
+
+                                        // Add to routing table if appropriate
+                                        _routingTable.AddOrUpdate(newEntry);
+
+                                        // Add to query list if not visited
+                                        if (!visited.Contains($"{d.Host}:{d.Port}"))
+                                        {
+                                            nodesToQuery.Add(newEntry);
+                                        }
+                                    }
+                                }
+                                // Re-sort to prioritize closest
+                                nodesToQuery.Sort((a, b) =>
+                                {
+                                    if (a.NodeId == null || a.NodeId.Length == 0) return 1;
+                                    if (b.NodeId == null || b.NodeId.Length == 0) return -1;
+                                    return Crypto.XorDistance(a.NodeId, contentHash).CompareTo(Crypto.XorDistance(b.NodeId, contentHash));
+                                });
+                            }
+                        }
+                        catch
+                        {
+                            // ignore parse errors
+                        }
+                    }
                 }
             }
 
@@ -402,63 +486,60 @@ namespace MangaMesh.Peer.Core.Node
             DhtMessage reply;
             if (nodesWithContent.Count > 0)
             {
+                var payload = SerializeNodeIds(nodesWithContent);
                 reply = new DhtMessage
                 {
                     Type = DhtMessageType.Value,
                     SenderNodeId = Identity.NodeId,
-                    Payload = SerializeNodeIds(nodesWithContent),
+                    Payload = payload,
                     TimestampUtc = DateTime.UtcNow,
-                    Signature = Identity.Sign(SerializeNodeIds(nodesWithContent)),
+                    Signature = Identity.Sign(payload),
                     SenderPort = Transport.Port,
-                    RequestId = message.RequestId // Echo ID
+                    RequestId = message.RequestId
                 };
             }
             else
             {
-                // Return closest nodes instead
-                var closestNodes = FindClosestNodes(contentHash, 20);
+                var closestNodes = _routingTable.FindClosest(contentHash, 20);
+                var payload = SerializeNodes(closestNodes);
                 reply = new DhtMessage
                 {
                     Type = DhtMessageType.Nodes,
                     SenderNodeId = Identity.NodeId,
-                    Payload = SerializeNodes(closestNodes),
+                    Payload = payload,
                     TimestampUtc = DateTime.UtcNow,
-                    Signature = Identity.Sign(SerializeNodes(closestNodes)),
+                    Signature = Identity.Sign(payload),
                     SenderPort = Transport.Port,
-                    RequestId = message.RequestId // Echo ID
+                    RequestId = message.RequestId
                 };
             }
 
-            var senderAddress = GetAddressForNode(message.SenderNodeId);
+            var senderAddress = _routingTable.GetAddressForNode(message.SenderNodeId);
             if (senderAddress != null)
                 await SendDhtMessageAsync(senderAddress, reply);
         }
 
         public async Task<List<RoutingEntry>> FindNodeAsync(byte[] nodeId, RoutingEntry? bootstrap = null)
         {
-            // simplified iterative lookup
             var closestNodes = new List<RoutingEntry>();
             var queriedNodes = new HashSet<string>();
 
             if (bootstrap != null)
-            {
                 closestNodes.Add(bootstrap);
-            }
             else
-            {
-                closestNodes.AddRange(FindClosestNodes(nodeId, 20));
-            }
+                closestNodes.AddRange(_routingTable.FindClosest(nodeId, 20));
 
-            // To avoid concurrent modification, we iterate by index, observing that we might add to the list
             for (int i = 0; i < closestNodes.Count; i++)
             {
                 var node = closestNodes[i];
                 var nodeKey = $"{node.Address.Host}:{node.Address.Port}";
-                
+
                 if (queriedNodes.Contains(nodeKey)) continue;
                 queriedNodes.Add(nodeKey);
 
-                Console.WriteLine($"Looking for node [{Convert.ToHexString(node.NodeId ?? Array.Empty<byte>())}] - [{node.Address.Host}:{node.Address.Port}]");
+                _logger.LogDebug("Looking for node [{NodeId}] - [{Host}:{Port}]",
+                    Convert.ToHexString(node.NodeId ?? Array.Empty<byte>()),
+                    node.Address.Host, node.Address.Port);
 
                 var message = new DhtMessage
                 {
@@ -474,16 +555,20 @@ namespace MangaMesh.Peer.Core.Node
 
                 if (response != null)
                 {
-                    Console.WriteLine($"Received response from {response.ComputedSenderIp}:{response.SenderPort}. SenderID len: {response.SenderNodeId?.Length ?? 0}");
+                    _logger.LogDebug("Received response from {IP}:{Port}. SenderID len: {Len}",
+                        response.ComputedSenderIp, response.SenderPort, response.SenderNodeId?.Length ?? 0);
 
-                    // If the node we queried didn't have an ID (e.g. bootstrap), save it now
-                    if ((node.NodeId == null || node.NodeId.Length == 0) && response.SenderNodeId != null && response.SenderNodeId.Length > 0)
+                    if ((node.NodeId == null || node.NodeId.Length == 0) && response.SenderNodeId?.Length > 0)
                     {
-                        Console.WriteLine($"Updating NodeID for bootstrap node to {Convert.ToHexString(response.SenderNodeId)}");
+                        _logger.LogDebug("Updating NodeID for bootstrap node to {NodeId}",
+                            Convert.ToHexString(response.SenderNodeId));
                         node.NodeId = response.SenderNodeId;
-                        
-                        // Also update in routing table immediately if possible
-                        UpdateRoutingTable(node.NodeId, node.Address);
+                        _routingTable.AddOrUpdate(new RoutingEntry
+                        {
+                            NodeId = node.NodeId,
+                            Address = node.Address,
+                            LastSeenUtc = DateTime.UtcNow
+                        });
                     }
 
                     if (response.Type == DhtMessageType.Nodes)
@@ -491,41 +576,39 @@ namespace MangaMesh.Peer.Core.Node
                         try
                         {
                             var nodesJson = Encoding.UTF8.GetString(response.Payload);
-                            var discoveredNodes = JsonSerializer.Deserialize<List<NodeEntry>>(nodesJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                            if (discoveredNodes != null)
+                            var discovered = JsonSerializer.Deserialize<List<NodeEntry>>(nodesJson,
+                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                            if (discovered != null)
                             {
-                                foreach (var discovered in discoveredNodes)
+                                foreach (var d in discovered)
                                 {
-                                    if (!string.IsNullOrEmpty(discovered.NodeId) && !string.IsNullOrEmpty(discovered.Host) && discovered.Port > 0)
+                                    if (!string.IsNullOrEmpty(d.NodeId) && !string.IsNullOrEmpty(d.Host) && d.Port > 0)
                                     {
-                                        var discoveredId = Convert.FromHexString(discovered.NodeId);
-                                        
+                                        var discoveredId = Convert.FromHexString(d.NodeId);
                                         var entry = new RoutingEntry
                                         {
                                             NodeId = discoveredId,
-                                            Address = new NodeAddress(discovered.Host, discovered.Port),
+                                            Address = new NodeAddress(d.Host, d.Port),
                                             LastSeenUtc = DateTime.UtcNow
                                         };
-                                        UpdateRoutingTable(entry.NodeId, entry.Address);
-                                        
-                                        // Add to search list if not already present
+                                        _routingTable.AddOrUpdate(entry);
+
                                         if (!closestNodes.Any(n => n.NodeId != null && n.NodeId.SequenceEqual(discoveredId)))
-                                        {
                                             closestNodes.Add(entry);
-                                        }
                                     }
                                 }
                             }
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Failed to parse FindNode response: {ex.Message}");
+                            _logger.LogWarning(ex, "Failed to parse FindNode response");
                         }
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"Timeout or no response from {node.Address.Host}:{node.Address.Port}");
+                    _logger.LogDebug("Timeout or no response from {Host}:{Port}", node.Address.Host, node.Address.Port);
                 }
             }
             return closestNodes;
@@ -545,10 +628,6 @@ namespace MangaMesh.Peer.Core.Node
             await SendDhtMessageAsync(node.Address, message);
         }
 
-
-        /// <summary>
-        /// Stop the DHT node
-        /// </summary>
         public void Stop()
         {
             _running = false;
@@ -558,26 +637,25 @@ namespace MangaMesh.Peer.Core.Node
         {
             foreach (var bootstrap in bootstrapNodes)
             {
-                // Use a random node ID for initial queries
                 var randomId = Crypto.RandomNodeId();
-
                 try
                 {
                     var foundNodes = await FindNodeAsync(randomId, bootstrap);
                     bool success = false;
                     foreach (var node in foundNodes)
                     {
-                        if (node.NodeId != null && node.NodeId.Length > 0)
+                        if (node.NodeId?.Length > 0)
                         {
-                            UpdateRoutingTable(node.NodeId, node.Address);
+                            _routingTable.AddOrUpdate(new RoutingEntry
+                            {
+                                NodeId = node.NodeId,
+                                Address = node.Address,
+                                LastSeenUtc = DateTime.UtcNow
+                            });
                             success = true;
                         }
                     }
-
-                    if (success)
-                    {
-                        break;
-                    }
+                    if (success) break;
                 }
                 catch
                 {
@@ -586,39 +664,35 @@ namespace MangaMesh.Peer.Core.Node
             }
         }
 
-        // Made public for ProtocolHandler
         public async Task HandleMessageAsync(DhtMessage message)
         {
-            // Update routing table with sender - DO THIS FIRST so we learn about nodes from responses too
             if (!string.IsNullOrEmpty(message.ComputedSenderIp) && message.SenderPort > 0)
             {
-                UpdateRoutingTable(message.SenderNodeId, new NodeAddress(message.ComputedSenderIp, message.SenderPort));
+                _routingTable.AddOrUpdate(new RoutingEntry
+                {
+                    NodeId = message.SenderNodeId,
+                    Address = new NodeAddress(message.ComputedSenderIp, message.SenderPort),
+                    LastSeenUtc = DateTime.UtcNow
+                });
             }
             else
             {
-                Console.WriteLine($"Warning: Received message without valid address info. IP: {message.ComputedSenderIp}, Port: {message.SenderPort}");
+                _logger.LogDebug("Warning: Received message without valid address info. IP: {IP}, Port: {Port}",
+                    message.ComputedSenderIp, message.SenderPort);
             }
 
-            // Check if it's a response to a pending request
-            if (_pendingRequests.TryRemove(message.RequestId, out var tcs))
-            {
-                tcs.TrySetResult(message);
+            if (_requestTracker.TryComplete(message.RequestId, message))
                 return;
-            }
 
-            Console.WriteLine($"Received message [{message.Type}]");
+            _logger.LogDebug("Received message [{Type}]", message.Type);
 
             switch (message.Type)
             {
                 case DhtMessageType.Ping:
                     await HandlePingAsync(message);
                     break;
-                case DhtMessageType.Pong:
-                    break;
                 case DhtMessageType.FindNode:
                     await HandleFindNodeAsync(message);
-                    break;
-                case DhtMessageType.Nodes:
                     break;
                 case DhtMessageType.Store:
                     await HandleStoreAsync(message);
@@ -626,16 +700,10 @@ namespace MangaMesh.Peer.Core.Node
                 case DhtMessageType.FindValue:
                     await HandleFindValueAsync(message);
                     break;
-                case DhtMessageType.Value:
-                    break;
                 default:
                     break;
             }
         }
-
-        // ======================================================
-        // Handlers
-        // ======================================================
 
         private async Task HandlePingAsync(DhtMessage message)
         {
@@ -647,29 +715,26 @@ namespace MangaMesh.Peer.Core.Node
                 TimestampUtc = DateTime.UtcNow,
                 Signature = Identity.Sign(Array.Empty<byte>()),
                 SenderPort = Transport.Port,
-                RequestId = message.RequestId // Echo ID
+                RequestId = message.RequestId
             };
-
-            var senderAddress = GetAddressForNode(message.SenderNodeId);
+            var senderAddress = _routingTable.GetAddressForNode(message.SenderNodeId);
             if (senderAddress != null)
                 await SendDhtMessageAsync(senderAddress, pong);
         }
 
-        private async Task HandleStoreAsync(DhtMessage message)
+        private Task HandleStoreAsync(DhtMessage message)
         {
-            // Payload = content hash
             Storage.StoreContent(message.Payload, message.SenderNodeId);
-            await Task.CompletedTask; // placeholder
+            return Task.CompletedTask;
         }
 
         private async Task HandleFindNodeAsync(DhtMessage message)
         {
             var targetId = message.Payload;
-            var closestNodes = FindClosestNodes(targetId, 20);
-
+            var closestNodes = _routingTable.FindClosest(targetId, 20);
             var nodesPayload = SerializeNodes(closestNodes);
 
-            var nodesMessage = new DhtMessage
+            var reply = new DhtMessage
             {
                 Type = DhtMessageType.Nodes,
                 SenderNodeId = Identity.NodeId,
@@ -677,12 +742,12 @@ namespace MangaMesh.Peer.Core.Node
                 TimestampUtc = DateTime.UtcNow,
                 Signature = Identity.Sign(nodesPayload),
                 SenderPort = Transport.Port,
-                RequestId = message.RequestId // Echo ID
+                RequestId = message.RequestId
             };
 
-            var senderAddress = GetAddressForNode(message.SenderNodeId);
+            var senderAddress = _routingTable.GetAddressForNode(message.SenderNodeId);
             if (senderAddress != null)
-                await SendDhtMessageAsync(senderAddress, nodesMessage);
+                await SendDhtMessageAsync(senderAddress, reply);
         }
 
         private async Task<DhtMessage?> SendDhtMessageAsync(NodeAddress address, DhtMessage message, bool waitForResponse = false)
@@ -693,7 +758,7 @@ namespace MangaMesh.Peer.Core.Node
                 if (waitForResponse)
                 {
                     tcs = new TaskCompletionSource<DhtMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    _pendingRequests[message.RequestId] = tcs;
+                    _requestTracker.Register(message.RequestId, tcs);
                 }
 
                 var json = JsonSerializer.Serialize(message);
@@ -706,100 +771,39 @@ namespace MangaMesh.Peer.Core.Node
 
                 if (waitForResponse && tcs != null)
                 {
-                    var timeoutTask = Task.Delay(2000); // 2s timeout
+                    var timeoutTask = Task.Delay(2000);
                     var completed = await Task.WhenAny(tcs.Task, timeoutTask);
                     if (completed == tcs.Task)
-                    {
                         return await tcs.Task;
-                    }
-                    else
-                    {
-                        _pendingRequests.TryRemove(message.RequestId, out _);
-                        return null;
-                    }
+
+                    _requestTracker.Cancel(message.RequestId);
+                    return null;
                 }
                 return null;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to send message: {ex.Message}");
-                _pendingRequests.TryRemove(message.RequestId, out _);
+                _logger.LogWarning(ex, "Failed to send DHT message");
+                _requestTracker.Cancel(message.RequestId);
                 return null;
             }
         }
 
-
-        // ======================================================
-        // Helpers
-        // ======================================================
-
-        private void UpdateRoutingTable(byte[] nodeId, NodeAddress address)
+        private byte[] SerializeNodes(IReadOnlyList<RoutingEntry> nodes)
         {
-            if (nodeId == null || nodeId.Length == 0) return;
-
-            Console.WriteLine($"Adding node [{address.Host}:{address.Port}] to routing table");
-            int bucketIndex = GetBucketIndex(nodeId);
-            var entry = new RoutingEntry
-            {
-                NodeId = nodeId,
-                Address = address,
-                LastSeenUtc = DateTime.UtcNow
-            };
-            RoutingTable[bucketIndex].AddOrUpdate(entry);
-        }
-
-        private int GetBucketIndex(byte[] nodeId)
-        {
-            // XOR distance first differing bit
-            var distance = Crypto.XorDistance(Identity.NodeId, nodeId);
-            return (int)Math.Min(255, distance.BitLength() - 1);
-        }
-
-        private NodeAddress? GetAddressForNode(byte[] nodeId)
-        {
-            foreach (var bucket in RoutingTable)
-            {
-                var entry = bucket.Entries.Find(e => e.NodeId.AsSpan().SequenceEqual(nodeId));
-                if (entry != null) return entry.Address;
-            }
-            return null;
-        }
-
-        private byte[] SerializeNodes(List<RoutingEntry> nodes)
-        {
-            // naive JSON serialization - include NodeId so receivers can populate routing tables
-            var addresses = nodes.ConvertAll(n => new
+            var addresses = nodes.Select(n => new
             {
                 Host = n.Address.Host,
                 Port = n.Address.Port,
                 NodeId = Convert.ToHexString(n.NodeId)
-            });
-            return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(addresses);
+            }).ToList();
+            return JsonSerializer.SerializeToUtf8Bytes(addresses);
         }
 
         private byte[] SerializeNodeIds(List<byte[]> nodeIds)
-        {
-            return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(nodeIds);
-        }
+            => JsonSerializer.SerializeToUtf8Bytes(nodeIds);
 
-        private List<RoutingEntry> FindClosestNodes(byte[] targetNodeId, int count)
-        {
-            // naive linear scan; XOR distance
-            var allEntries = new List<RoutingEntry>();
-            foreach (var bucket in RoutingTable)
-                allEntries.AddRange(bucket.Entries);
-
-            allEntries.Sort((a, b) =>
-            {
-                var distA = Crypto.XorDistance(a.NodeId, targetNodeId);
-                var distB = Crypto.XorDistance(b.NodeId, targetNodeId);
-                return distA.CompareTo(distB);
-            });
-
-            return allEntries.GetRange(0, Math.Min(count, allEntries.Count));
-        }
-
-        class ByteArrayComparer : IEqualityComparer<byte[]>
+        private class ByteArrayComparer : IEqualityComparer<byte[]>
         {
             public bool Equals(byte[]? x, byte[]? y)
             {
@@ -807,10 +811,7 @@ namespace MangaMesh.Peer.Core.Node
                 return x.SequenceEqual(y);
             }
 
-            public int GetHashCode(byte[] obj)
-            {
-                return BitConverter.ToInt32(obj, 0); // simplified
-            }
+            public int GetHashCode(byte[] obj) => BitConverter.ToInt32(obj, 0);
         }
     }
 

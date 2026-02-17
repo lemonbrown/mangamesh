@@ -1,4 +1,6 @@
-﻿using MangaMesh.Peer.Core.Storage;
+﻿using MangaMesh.Peer.Core.Configuration;
+using MangaMesh.Peer.Core.Storage;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,9 +15,9 @@ namespace MangaMesh.Peer.Core.Blob
         private readonly string _root;
         private readonly IStorageMonitorService _storageMonitor;
 
-        public BlobStore(string root, IStorageMonitorService storageMonitor)
+        public BlobStore(IOptions<BlobStoreOptions> options, IStorageMonitorService storageMonitor)
         {
-            _root = root;
+            _root = options.Value.RootPath;
             _storageMonitor = storageMonitor;
             Directory.CreateDirectory(_root);
         }

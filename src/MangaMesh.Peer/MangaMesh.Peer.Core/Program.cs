@@ -1,5 +1,7 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Chapters;
+using MangaMesh.Peer.Core.Configuration;
 using MangaMesh.Peer.Core.Data;
 using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Manifests;
@@ -9,6 +11,7 @@ using MangaMesh.Peer.Core.Storage;
 using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Peer.Core.Transport;
 using MangaMesh.Shared.Models;
+using MangaMesh.Shared.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,21 +26,29 @@ var builder = new HostBuilder()
     .ConfigureServices((context, services) =>
 {
     var config = context.Configuration;
-    var root = "input";
     var trackerUrl = config["TrackerUrl"] ?? "https://localhost:7030";
+
+    services.Configure<BlobStoreOptions>(config.GetSection("BlobStore"));
+    services.Configure<ManifestStoreOptions>(config.GetSection("ManifestStore"));
+    services.Configure<DhtOptions>(config.GetSection("Dht"));
 
     services
     .AddLogging(n => n.AddConsole())
     .AddScoped<ITrackerClient, TrackerClient>()
     .AddScoped<IPeerFetcher, PeerFetcher>()
-    .AddSingleton<IManifestStore>(new ManifestStore(root))
-    .AddSingleton<IStorageMonitorService>(sp => new StorageMonitorService(root, sp.GetRequiredService<IManifestStore>()))
-    .AddSingleton<IBlobStore>(sp => new BlobStore(root, sp.GetRequiredService<IStorageMonitorService>()))
+    .AddSingleton<IManifestStore, ManifestStore>()
+    .AddSingleton<IStorageMonitorService, StorageMonitorService>()
+    .AddSingleton<IBlobStore, BlobStore>()
     .AddDbContext<ClientDbContext>(options =>
         options.UseSqlite($"Data Source={Path.Combine(AppContext.BaseDirectory, "data", "mangamesh.db")}"))
     .AddSingleton<IKeyStore, SqliteKeyStore>()
     .AddSingleton<INodeIdentityService, NodeIdentityService>()
-    .AddSingleton<IKeyPairService, KeyPairService>();
+    .AddSingleton<IKeyPairService, KeyPairService>()
+    .AddScoped<ITrackerPublisher, TrackerPublisher>()
+    .AddSingleton<IImageFormatProvider, DefaultImageFormatProvider>()
+    .AddSingleton<IChapterSourceReader, DirectorySourceReader>()
+    .AddSingleton<IChapterSourceReader, ZipSourceReader>()
+    .AddSingleton<IManifestSigningService, ManifestSigningService>();
 
     services.AddHttpClient<IMetadataClient, HttpMetadataClient>(client =>
     {
@@ -55,6 +66,12 @@ var builder = new HostBuilder()
         return handler;
     });
 
+    // Forward narrower interfaces to the same TrackerClient instance
+    services.AddTransient<IPeerLocator>(sp => (IPeerLocator)sp.GetRequiredService<ITrackerClient>());
+    services.AddTransient<INodeAnnouncer>(sp => (INodeAnnouncer)sp.GetRequiredService<ITrackerClient>());
+    services.AddTransient<ISeriesRegistry>(sp => (ISeriesRegistry)sp.GetRequiredService<ITrackerClient>());
+    services.AddTransient<IManifestAnnouncer>(sp => (IManifestAnnouncer)sp.GetRequiredService<ITrackerClient>());
+    services.AddTransient<ITrackerChallengeClient>(sp => (ITrackerChallengeClient)sp.GetRequiredService<ITrackerClient>());
 
     services.AddSingleton<INodeConnectionInfoProvider, ConsoleNodeConnectionInfoProvider>();
 
@@ -81,16 +98,21 @@ var builder = new HostBuilder()
     // ======================================================
     // DHT node (singleton)
     // ======================================================
+    services.AddSingleton<IBootstrapNodeProvider, YamlBootstrapNodeProvider>();
     services.AddSingleton<IDhtNode>(sp =>
     {
         var identity = sp.GetRequiredService<INodeIdentity>();
         var transport = sp.GetRequiredService<ITransport>();
         var storage = sp.GetRequiredService<IDhtStorage>();
         var keyStore = sp.GetRequiredService<IKeyStore>();
-        var keypariService = sp.GetRequiredService<IKeyPairService>();
-        var tracker = sp.GetRequiredService<ITrackerClient>();
+        var keypairService = sp.GetRequiredService<IKeyPairService>();
+        var tracker = sp.GetRequiredService<INodeAnnouncer>();
         var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
-        return new DhtNode(identity, transport, storage, keypariService, keyStore, tracker, connectionInfo);
+        var bootstrapProvider = sp.GetRequiredService<IBootstrapNodeProvider>();
+        var logger = sp.GetRequiredService<ILogger<DhtNode>>();
+        var routingTable = new KBucketRoutingTable(identity.NodeId);
+        var requestTracker = new DhtRequestTracker();
+        return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
     });
 
 

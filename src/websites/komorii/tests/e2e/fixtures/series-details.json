@@ -1,0 +1,8 @@
+{
+    "seriesId": "test-series-001",
+    "title": "Test Manga",
+    "description": "A test manga series used for E2E testing.",
+    "status": "Ongoing",
+    "year": 2023,
+    "externalMangaId": "ext-001"
+}

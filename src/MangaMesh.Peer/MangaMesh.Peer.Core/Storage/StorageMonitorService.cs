@@ -1,4 +1,6 @@
+using MangaMesh.Peer.Core.Configuration;
 using MangaMesh.Peer.Core.Manifests;
+using Microsoft.Extensions.Options;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -8,16 +10,17 @@ namespace MangaMesh.Peer.Core.Storage
     public class StorageMonitorService : IStorageMonitorService
     {
         private readonly string _inputPath;
+        private readonly long _maxStorageBytes;
         private readonly IManifestStore _manifestStore;
-        private const long MaxStorageBytes = 5L * 1024 * 1024 * 1024; // 5 GB
 
         // Simple cache
         private long? _cachedUsedBytes;
         private DateTime _lastScan = DateTime.MinValue;
 
-        public StorageMonitorService(string inputPath, IManifestStore manifestStore)
+        public StorageMonitorService(IOptions<BlobStoreOptions> options, IManifestStore manifestStore)
         {
-            _inputPath = inputPath;
+            _inputPath = options.Value.RootPath;
+            _maxStorageBytes = options.Value.MaxStorageBytes;
             _manifestStore = manifestStore;
         }
 
@@ -28,7 +31,7 @@ namespace MangaMesh.Peer.Core.Storage
 
             return new StorageStats
             {
-                TotalMb = MaxStorageBytes / (1024.0 * 1024.0),
+                TotalMb = _maxStorageBytes / (1024.0 * 1024.0),
                 UsedMb = usedBytes / (1024.0 * 1024.0),
                 ManifestCount = manifestCount
             };
@@ -37,9 +40,9 @@ namespace MangaMesh.Peer.Core.Storage
         public Task EnsureStorageAvailable(long bytesRequired)
         {
             var used = GetUsedBytes();
-            if (used + bytesRequired > MaxStorageBytes)
+            if (used + bytesRequired > _maxStorageBytes)
             {
-                throw new IOException($"Storage limit exceeded. Limit: {MaxStorageBytes} bytes, Used: {used} bytes, Required: {bytesRequired} bytes.");
+                throw new IOException($"Storage limit exceeded. Limit: {_maxStorageBytes} bytes, Used: {used} bytes, Required: {bytesRequired} bytes.");
             }
             return Task.CompletedTask;
         }

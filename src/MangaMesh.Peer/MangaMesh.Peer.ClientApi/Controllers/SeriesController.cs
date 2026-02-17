@@ -13,11 +13,11 @@ namespace MangaMesh.Peer.ClientApi.Controllers
     public class SeriesController : ControllerBase
     {
         private readonly IManifestStore _manifestStore;
-        private readonly ITrackerClient _trackerClient;
+        private readonly ISeriesRegistry _trackerClient;
         private readonly IBlobStore _blobStore;
         private readonly IPeerFetcher _peerFetcher;
 
-        public SeriesController(IManifestStore manifestStore, ITrackerClient trackerClient, IBlobStore blobStore, IPeerFetcher peerFetcher)
+        public SeriesController(IManifestStore manifestStore, ISeriesRegistry trackerClient, IBlobStore blobStore, IPeerFetcher peerFetcher)
         {
             _manifestStore = manifestStore;
             _trackerClient = trackerClient;

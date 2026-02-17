@@ -1,0 +1,14 @@
+[
+    {
+        "seriesId": "test-series-001",
+        "title": "Test Manga",
+        "seedCount": 3,
+        "chapterCount": 2,
+        "lastUploadedAt": "2026-02-01T10:00:00Z",
+        "source": 0,
+        "externalMangaId": "ext-001",
+        "year": 2023,
+        "latestChapterNumber": 2,
+        "latestChapterTitle": "Return"
+    }
+]

@@ -1,16 +1,20 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Chapters;
+using MangaMesh.Peer.Core.Configuration;
+using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Data;
+using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Node;
-using MangaMesh.Peer.Core.Content;
-using MangaMesh.Peer.Core.Keys;
-using MangaMesh.Peer.Core.Transport;
 using MangaMesh.Peer.Core.Storage;
-using MangaMesh.Peer.Core.Blob;
-using MangaMesh.Peer.Core.Data;
+using MangaMesh.Peer.Core.Tracker;
+using MangaMesh.Peer.Core.Transport;
+using MangaMesh.Shared.Services;
 using MangaMesh.Peer.GatewayApi.Config;
+using Microsoft.Extensions.Logging;
 using MangaMesh.Peer.GatewayApi.Services;
-using MangaMesh.Peer.Core.Tracker; // Add this using for TrackerClient registration
 using MangaMesh.Peer.ClientApi.Services; // For ServerNodeConnectionInfoProvider
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,7 +63,22 @@ builder.Services.AddSingleton<ProtocolRouter>(sp =>
 builder.Services.AddSingleton<INodeIdentity, NodeIdentity>();
 
 // Register Node
-builder.Services.AddSingleton<IDhtNode, DhtNode>();
+builder.Services.AddSingleton<IBootstrapNodeProvider, YamlBootstrapNodeProvider>();
+builder.Services.AddSingleton<IDhtNode>(sp =>
+{
+    var identity = sp.GetRequiredService<INodeIdentity>();
+    var transport = sp.GetRequiredService<ITransport>();
+    var storage = sp.GetRequiredService<IDhtStorage>();
+    var keyStore = sp.GetRequiredService<IKeyStore>();
+    var keypairService = sp.GetRequiredService<IKeyPairService>();
+    var tracker = sp.GetRequiredService<INodeAnnouncer>();
+    var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
+    var bootstrapProvider = sp.GetRequiredService<IBootstrapNodeProvider>();
+    var logger = sp.GetRequiredService<ILogger<DhtNode>>();
+    var routingTable = new KBucketRoutingTable(identity.NodeId);
+    var requestTracker = new DhtRequestTracker();
+    return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
+});
 
 // Register Tracker Client
 builder.Services.AddHttpClient<ITrackerClient, TrackerClient>(client =>
@@ -73,6 +92,13 @@ builder.Services.AddHttpClient<ITrackerClient, TrackerClient>(client =>
     handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
     return handler;
 });
+
+// Forward narrower interfaces to the same TrackerClient instance
+builder.Services.AddTransient<IPeerLocator>(sp => (IPeerLocator)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<INodeAnnouncer>(sp => (INodeAnnouncer)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<ISeriesRegistry>(sp => (ISeriesRegistry)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<IManifestAnnouncer>(sp => (IManifestAnnouncer)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<ITrackerChallengeClient>(sp => (ITrackerChallengeClient)sp.GetRequiredService<ITrackerClient>());
 
 // Register Connection Info Provider
 // For Gateway, we use a provider that returns the configured port or resolves IP
@@ -107,17 +133,27 @@ builder.Services.AddDbContext<ClientDbContext>(options =>
 // Manifest Store
 builder.Services.AddSingleton<IManifestStore, SqliteManifestStore>();
 
+// Storage options — drives StorageMonitorService and BlobStore root path and quota
+builder.Services.Configure<BlobStoreOptions>(builder.Configuration.GetSection("BlobStore"));
+builder.Services.Configure<DhtOptions>(builder.Configuration.GetSection("Dht"));
+
 // Storage Monitor (monitors blob storage)
-var blobRoot = Path.Combine(AppContext.BaseDirectory, "data", "blobs");
-builder.Services.AddSingleton<IStorageMonitorService>(sp =>
-    new StorageMonitorService(blobRoot, sp.GetRequiredService<IManifestStore>()));
+builder.Services.AddSingleton<IStorageMonitorService, StorageMonitorService>();
 
 // Blob Store
-builder.Services.AddSingleton<IBlobStore>(sp =>
-    new BlobStore(blobRoot, sp.GetRequiredService<IStorageMonitorService>()));
+builder.Services.AddSingleton<IBlobStore, BlobStore>();
 
 // Chunk Ingester
 builder.Services.AddSingleton<IChunkIngester, ChunkIngester>();
+
+// Tracker Publisher
+builder.Services.AddSingleton<ITrackerPublisher, TrackerPublisher>();
+
+// Chapter source readers and image format provider
+builder.Services.AddSingleton<IImageFormatProvider, DefaultImageFormatProvider>();
+builder.Services.AddSingleton<IChapterSourceReader, DirectorySourceReader>();
+builder.Services.AddSingleton<IChapterSourceReader, ZipSourceReader>();
+builder.Services.AddSingleton<IManifestSigningService, ManifestSigningService>();
 
 // Dummy content provider for generic hash lookup if needed, but ContentProtocolHandler now uses IBlobStore
 builder.Services.AddSingleton<Func<string, byte[]?>>(sp => (hash) => null);

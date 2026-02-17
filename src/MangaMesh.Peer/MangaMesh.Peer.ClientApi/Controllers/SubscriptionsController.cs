@@ -12,9 +12,9 @@ namespace MangaMesh.Peer.ClientApi.Controllers
     public class SubscriptionsController : ControllerBase
     {
         private readonly ISubscriptionStore _subscriptionStore;
-        private readonly ITrackerClient _trackerClient;
+        private readonly ISeriesRegistry _trackerClient;
 
-        public SubscriptionsController(ISubscriptionStore subscriptionStore, ITrackerClient trackerClient)
+        public SubscriptionsController(ISubscriptionStore subscriptionStore, ISeriesRegistry trackerClient)
         {
             _subscriptionStore = subscriptionStore;
             _trackerClient = trackerClient;

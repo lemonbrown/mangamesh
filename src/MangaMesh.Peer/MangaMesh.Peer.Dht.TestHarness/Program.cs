@@ -54,7 +54,7 @@ namespace MangaMesh.Peer.Dht.TestHarness
             Console.WriteLine($"Publisher Keys Path: {keyPath}");
 
             var keyStore = new FileKeyStore(keyPath);
-            var keyPairService = new KeyPairService(keyStore);
+            var keyPairService = new KeyPairService(keyStore, NullLogger<KeyPairService>.Instance);
 
             // Create a consistent identity for the harness publisher
             INodeIdentityService harnessIdentity = new SimpleNodeIdentity();
@@ -284,7 +284,7 @@ namespace MangaMesh.Peer.Dht.TestHarness
 
             var storage = new InMemoryDhtStorage();
             var keyStore = new InMemoryKeyStore();
-            var keyPairService = new KeyPairService(keyStore);
+            var keyPairService = new KeyPairService(keyStore, NullLogger<KeyPairService>.Instance);
 
             var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
             var identity = new NodeIdentity(keyPairService, config, keyStore);
@@ -293,7 +293,11 @@ namespace MangaMesh.Peer.Dht.TestHarness
             var tracker = new TrackerMock();
             var connectionInfo = new ConsoleNodeConnectionInfoProvider();
 
-            var node = new DhtNode(identity, transport, storage, keyPairService, keyStore, tracker, connectionInfo);
+            var routingTable = new KBucketRoutingTable(identity.NodeId);
+            var requestTracker = new DhtRequestTracker();
+            var bootstrapProvider = new StaticBootstrapNodeProvider(Array.Empty<RoutingEntry>());
+            var node = new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker,
+                keyPairService, keyStore, tracker, connectionInfo, NullLogger<DhtNode>.Instance);
 
             // Wiring for Protocol Multiplexing
             var router = new ProtocolRouter();

@@ -10,12 +10,12 @@ namespace MangaMesh.Peer.ClientApi.Controllers
     {
         private readonly IKeyPairService _keyPairService;
         private readonly IKeyStore _keyStore;
-        private readonly ITrackerClient _trackerClient;
+        private readonly ITrackerChallengeClient _trackerClient;
 
         public KeysController(
             IKeyPairService keyPairService,
             IKeyStore keyStore,
-            ITrackerClient trackerClient)
+            ITrackerChallengeClient trackerClient)
         {
             _keyPairService = keyPairService;
             _keyStore = keyStore;

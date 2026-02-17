@@ -2,22 +2,23 @@ using MangaMesh.Peer.ClientApi.Middleware;
 using MangaMesh.Peer.ClientApi.Services;
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Chapters;
+using MangaMesh.Peer.Core.Configuration;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Data;
 using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Metadata;
 using MangaMesh.Peer.Core.Node;
-using MangaMesh.Peer.Core.Replication;
+//using MangaMesh.Peer.Core.Replication;
 using MangaMesh.Peer.Core.Storage;
 using MangaMesh.Peer.Core.Subscriptions;
 using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Peer.Core.Transport; // For TcpTransport
 
 using MangaMesh.Shared.Models;
+using MangaMesh.Shared.Services;
 using Microsoft.EntityFrameworkCore;
-
-var dataPath = Path.Combine(AppContext.BaseDirectory, "input");
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,10 +58,14 @@ builder.Services.AddSwaggerGen();
 
 
 
+builder.Services.Configure<BlobStoreOptions>(builder.Configuration.GetSection("BlobStore"));
+builder.Services.Configure<DhtOptions>(builder.Configuration.GetSection("Dht"));
+
 builder.Services.AddScoped<IManifestStore, SqliteManifestStore>();
-builder.Services.AddScoped<IStorageMonitorService>(sp => new StorageMonitorService(dataPath, sp.GetRequiredService<IManifestStore>()));
-builder.Services.AddScoped<IBlobStore>(sp => new BlobStore(dataPath, sp.GetRequiredService<IStorageMonitorService>()));
-builder.Services.AddSingleton<ISubscriptionStore>(new SubscriptionStore(dataPath));
+builder.Services.AddScoped<IStorageMonitorService, StorageMonitorService>();
+builder.Services.AddScoped<IBlobStore, BlobStore>();
+builder.Services.AddSingleton<ISubscriptionStore>(new SubscriptionStore(
+    builder.Configuration["SubscriptionStore:RootPath"] ?? Path.Combine(AppContext.BaseDirectory, "input")));
 builder.Services.AddSingleton<INodeIdentityService, NodeIdentityService>();
 
 
@@ -76,7 +81,12 @@ builder.Services
         .AddScoped<MangaMesh.Peer.ClientApi.Services.IImportChapterService, ImportChapterServiceWrapper>()
         .AddSingleton<INodeConnectionInfoProvider, ServerNodeConnectionInfoProvider>()
         .AddSingleton<IChallengeService, ChallengeService>()
-        .AddScoped<IChunkIngester, ChunkIngester>();
+        .AddScoped<IChunkIngester, ChunkIngester>()
+        .AddScoped<ITrackerPublisher, TrackerPublisher>()
+        .AddSingleton<IImageFormatProvider, DefaultImageFormatProvider>()
+        .AddSingleton<IChapterSourceReader, DirectorySourceReader>()
+        .AddSingleton<IChapterSourceReader, ZipSourceReader>()
+        .AddSingleton<IManifestSigningService, ManifestSigningService>();
 
 builder.Services.AddSingleton<INodeIdentity, NodeIdentity>();
 
@@ -90,16 +100,21 @@ builder.Services.AddSingleton<ITransport>(sp =>
     return new TcpTransport(listenPort: port);
 });
 builder.Services.AddSingleton<IDhtStorage, InMemoryDhtStorage>();
+builder.Services.AddSingleton<IBootstrapNodeProvider, YamlBootstrapNodeProvider>();
 builder.Services.AddSingleton<IDhtNode>(sp =>
 {
     var identity = sp.GetRequiredService<INodeIdentity>();
     var transport = sp.GetRequiredService<ITransport>();
     var storage = sp.GetRequiredService<IDhtStorage>();
     var keyStore = sp.GetRequiredService<IKeyStore>();
-    var keypariService = sp.GetRequiredService<IKeyPairService>();
-    var tracker = sp.GetRequiredService<ITrackerClient>();
+    var keypairService = sp.GetRequiredService<IKeyPairService>();
+    var tracker = sp.GetRequiredService<INodeAnnouncer>();
     var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
-    return new DhtNode(identity, transport, storage, keypariService, keyStore, tracker, connectionInfo);
+    var bootstrapProvider = sp.GetRequiredService<IBootstrapNodeProvider>();
+    var logger = sp.GetRequiredService<ILogger<DhtNode>>();
+    var routingTable = new KBucketRoutingTable(identity.NodeId);
+    var requestTracker = new DhtRequestTracker();
+    return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
 });
 builder.Services.AddHostedService<DhtHostedService>();
 
@@ -107,7 +122,7 @@ builder.Services.AddHostedService<DhtHostedService>();
 
 builder.Services.AddMemoryCache();
 
-builder.Services.AddHostedService<ReplicationService>();
+//builder.Services.AddHostedService<ReplicationService>();
 
 // Logging
 var loggerProvider = new MangaMesh.Peer.ClientApi.Services.InMemoryLoggerProvider();
@@ -133,6 +148,13 @@ builder.Services.AddHttpClient<ITrackerClient, TrackerClient>(client =>
     }
     return handler;
 });
+
+// Forward narrower interfaces to the same TrackerClient instance
+builder.Services.AddTransient<IPeerLocator>(sp => (IPeerLocator)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<INodeAnnouncer>(sp => (INodeAnnouncer)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<ISeriesRegistry>(sp => (ISeriesRegistry)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<IManifestAnnouncer>(sp => (IManifestAnnouncer)sp.GetRequiredService<ITrackerClient>());
+builder.Services.AddTransient<ITrackerChallengeClient>(sp => (ITrackerChallengeClient)sp.GetRequiredService<ITrackerClient>());
 
 builder.Services.AddHttpClient("TrackerProxy", client =>
 {

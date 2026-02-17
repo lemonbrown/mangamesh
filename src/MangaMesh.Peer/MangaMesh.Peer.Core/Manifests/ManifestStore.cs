@@ -1,4 +1,6 @@
-﻿using MangaMesh.Shared.Models;
+﻿using MangaMesh.Peer.Core.Configuration;
+using MangaMesh.Shared.Models;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,9 +15,9 @@ namespace MangaMesh.Peer.Core.Manifests
     {
         private readonly string _root;
 
-        public ManifestStore(string rootDirectory)
+        public ManifestStore(IOptions<ManifestStoreOptions> options)
         {
-            _root = rootDirectory;
+            _root = options.Value.RootPath;
             Directory.CreateDirectory(_root);
         }
 

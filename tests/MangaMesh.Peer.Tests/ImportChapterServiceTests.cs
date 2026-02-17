@@ -1,12 +1,16 @@
 using MangaMesh.Shared.Models;
+using MangaMesh.Shared.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Chapters;
 using MangaMesh.Peer.Core.Content;
+// DefaultImageFormatProvider, DirectorySourceReader, ZipSourceReader are in MangaMesh.Peer.Core.Chapters
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Peer.Core.Node;
 using MangaMesh.Peer.Core.Keys;
+using AnnounceManifestRequest = MangaMesh.Shared.Models.AnnounceManifestRequest;
 
 namespace MangaMesh.Peer.Tests
 {
@@ -15,11 +19,11 @@ namespace MangaMesh.Peer.Tests
     {
         private Mock<IBlobStore> _mockBlobStore = null!;
         private Mock<IManifestStore> _mockManifestStore = null!;
-        private Mock<ITrackerClient> _mockTrackerClient = null!;
+        private Mock<ISeriesRegistry> _mockSeriesRegistry = null!;
         private Mock<IKeyStore> _mockKeyStore = null!;
         private Mock<INodeIdentity> _mockNodeIdentity = null!;
-        private Mock<IKeyPairService> _mockKeyPairService = null!;
         private Mock<IChunkIngester> _mockChunkIngester = null!;
+        private Mock<ITrackerPublisher> _mockTrackerPublisher = null!;
         private ImportChapterService _service = null!;
         private string _tempDirectory = null!;
 
@@ -28,20 +32,31 @@ namespace MangaMesh.Peer.Tests
         {
             _mockBlobStore = new Mock<IBlobStore>();
             _mockManifestStore = new Mock<IManifestStore>();
-            _mockTrackerClient = new Mock<ITrackerClient>();
+            _mockSeriesRegistry = new Mock<ISeriesRegistry>();
             _mockKeyStore = new Mock<IKeyStore>();
             _mockNodeIdentity = new Mock<INodeIdentity>();
-            _mockKeyPairService = new Mock<IKeyPairService>();
             _mockChunkIngester = new Mock<IChunkIngester>();
+            _mockTrackerPublisher = new Mock<ITrackerPublisher>();
+
+            var formatProvider = new DefaultImageFormatProvider();
+            var sourceReaders = new IChapterSourceReader[]
+            {
+                new DirectorySourceReader(formatProvider),
+                new ZipSourceReader(formatProvider)
+            };
 
             _service = new ImportChapterService(
                 _mockBlobStore.Object,
                 _mockManifestStore.Object,
-                _mockTrackerClient.Object,
+                _mockSeriesRegistry.Object,
                 _mockKeyStore.Object,
                 _mockNodeIdentity.Object,
-                _mockKeyPairService.Object,
-                _mockChunkIngester.Object);
+                _mockChunkIngester.Object,
+                _mockTrackerPublisher.Object,
+                sourceReaders,
+                formatProvider,
+                new ManifestSigningService(),
+                NullLogger<ImportChapterService>.Instance);
 
             _tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(_tempDirectory);
@@ -60,7 +75,6 @@ namespace MangaMesh.Peer.Tests
         public async Task ImportAsync_ValidDirectory_CreatesAndAnnouncesManifest()
         {
             // Arrange
-            // 1. Create dummy files
             var file1 = Path.Combine(_tempDirectory, "001.jpg");
             var file2 = Path.Combine(_tempDirectory, "002.png");
             File.WriteAllBytes(file1, new byte[] { 1, 2, 3 });
@@ -79,24 +93,22 @@ namespace MangaMesh.Peer.Tests
                 ExternalMangaId = "ext-123"
             };
 
-            // 2. Setup Mocks
             _mockChunkIngester.Setup(x => x.IngestAsync(It.IsAny<Stream>(), It.IsAny<string>()))
                 .ReturnsAsync((Stream s, string m) =>
                 {
-                    // Return dummy page manifest and hash
                     var pm = new PageManifest { FileSize = s.Length };
                     var hash = "hash-" + Guid.NewGuid();
                     return (pm, hash);
                 });
 
-            _mockTrackerClient.Setup(x => x.RegisterSeriesAsync(It.IsAny<ExternalMetadataSource>(), It.IsAny<string>()))
+            _mockSeriesRegistry.Setup(x => x.RegisterSeriesAsync(It.IsAny<ExternalMetadataSource>(), It.IsAny<string>()))
                 .ReturnsAsync(("series-123", "Test Series"));
 
             _mockKeyStore.Setup(x => x.GetAsync())
                 .ReturnsAsync(new PublicPrivateKeyPair
                 {
                     PublicKeyBase64 = "pub-key",
-                    PrivateKeyBase64 = Convert.ToBase64String(new byte[32]) // valid length dummy
+                    PrivateKeyBase64 = Convert.ToBase64String(new byte[32]) // valid-length Ed25519 seed
                 });
 
             _mockManifestStore.Setup(x => x.ExistsAsync(It.IsAny<ManifestHash>()))
@@ -104,11 +116,8 @@ namespace MangaMesh.Peer.Tests
 
             _mockNodeIdentity.Setup(x => x.NodeId).Returns(new byte[] { 1, 2, 3 });
 
-            _mockTrackerClient.Setup(x => x.CreateChallengeAsync(It.IsAny<string>()))
-                .ReturnsAsync(new Shared.Models.KeyChallengeResponse { ChallengeId = "chal-1", Nonce = "nonce-1" });
-
-            _mockKeyPairService.Setup(x => x.SolveChallenge(It.IsAny<string>(), It.IsAny<string>()))
-                .Returns("signature-1");
+            _mockTrackerPublisher.Setup(x => x.PublishManifestAsync(It.IsAny<AnnounceManifestRequest>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
 
             // Act
             var result = await _service.ImportAsync(request);
@@ -118,11 +127,11 @@ namespace MangaMesh.Peer.Tests
             Assert.IsFalse(result.AlreadyExists);
             Assert.AreEqual(2, result.FileCount);
 
-            // Verify interactions
-            _mockTrackerClient.Verify(x => x.RegisterSeriesAsync(ExternalMetadataSource.MangaDex, "ext-123"), Times.Once);
+            // Verify series registration went to the correct interface
+            _mockSeriesRegistry.Verify(x => x.RegisterSeriesAsync(ExternalMetadataSource.MangaDex, "ext-123"), Times.Once);
 
-            _mockChunkIngester.Verify(x => x.IngestAsync(It.IsAny<Stream>(), "image/jpeg"), Times.Once); // for .jpg
-            _mockChunkIngester.Verify(x => x.IngestAsync(It.IsAny<Stream>(), "image/png"), Times.Once); // for .png
+            _mockChunkIngester.Verify(x => x.IngestAsync(It.IsAny<Stream>(), "image/jpeg"), Times.Once);
+            _mockChunkIngester.Verify(x => x.IngestAsync(It.IsAny<Stream>(), "image/png"), Times.Once);
 
             _mockManifestStore.Verify(x => x.SaveAsync(It.IsAny<ManifestHash>(), It.Is<ChapterManifest>(m =>
                 m.ChapterNumber == 1.0f &&
@@ -138,7 +147,8 @@ namespace MangaMesh.Peer.Tests
                 !string.IsNullOrEmpty(m.Signature) // Final save is signed
             )), Times.Once);
 
-            _mockTrackerClient.Verify(x => x.AnnounceManifestAsync(It.Is<Shared.Models.AnnounceManifestRequest>(req =>
+            // Verify TrackerPublisher was called with a fully-formed announce request
+            _mockTrackerPublisher.Verify(x => x.PublishManifestAsync(It.Is<AnnounceManifestRequest>(req =>
                 req.NodeId == "010203" &&
                 req.ChapterNumber == 1.0f &&
                 !string.IsNullOrEmpty(req.Signature)

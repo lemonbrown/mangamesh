@@ -1,0 +1,11 @@
+{
+    "version": "1",
+    "seriesId": "test-series-001",
+    "chapterId": "ch-001",
+    "chapterNumber": 1,
+    "files": [
+        { "hash": "page001hash000000000000000000000000000000000000000000000000000000", "filename": "page001.jpg", "size": 12345 },
+        { "hash": "page002hash000000000000000000000000000000000000000000000000000000", "filename": "page002.jpg", "size": 11234 }
+    ],
+    "nodes": ["localhost:9000"]
+}

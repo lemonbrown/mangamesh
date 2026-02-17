@@ -14,6 +14,7 @@ using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Data;
 using MangaMesh.Peer.Core.Node;
+using Microsoft.Extensions.Logging.Abstractions;
 using MangaMesh.Peer.Core.Tracker;
 using GatewayApi::MangaMesh.Peer.GatewayApi.Config;
 
@@ -110,7 +111,12 @@ namespace MangaMesh.IntegrationTests
             var mockTracker = new Mock<ITrackerClient>();
             var connectionInfo = new ConsoleNodeConnectionInfoProvider();
 
-            _peerNode = new DhtNode(identity, _peerTransport, storage, mockKeyPairService.Object, mockKeyStore.Object, mockTracker.Object, connectionInfo);
+            var routingTable = new KBucketRoutingTable(identity.NodeId);
+            var requestTracker = new DhtRequestTracker();
+            var bootstrapProvider = new StaticBootstrapNodeProvider(Array.Empty<RoutingEntry>());
+            _peerNode = new DhtNode(identity, _peerTransport, storage, routingTable, bootstrapProvider, requestTracker,
+                mockKeyPairService.Object, mockKeyStore.Object, mockTracker.Object, connectionInfo,
+                NullLogger<DhtNode>.Instance);
 
             // Wire up protocol handlers for Peer Node
             var router = new ProtocolRouter();

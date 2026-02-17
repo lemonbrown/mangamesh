@@ -1,8 +1,8 @@
 
 using MangaMesh.Peer.Core.Helpers;
-using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Node;
 using MangaMesh.Peer.Core.Transport;
+using MangaMesh.Peer.Tests.Helpers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -66,35 +66,14 @@ namespace MangaMesh.Peer.Tests
             Assert.IsTrue(bKnowsAHasIt, "Node B should know that Node A has the manifest.");
 
             // Assert Node B's routing table contains Node A
-            bool routingTableHasA = false;
-            foreach (var bucket in nodeB.RoutingTable)
-            {
-                if (bucket.Entries.Any(e => e.NodeId.AsSpan().SequenceEqual(nodeA.Identity.NodeId)))
-                {
-                    routingTableHasA = true;
-                    break;
-                }
-            }
+            bool routingTableHasA = nodeB.RoutingTable.GetAll()
+                .Any(e => e.NodeId.AsSpan().SequenceEqual(nodeA.Identity.NodeId));
             Assert.IsTrue(routingTableHasA, "Node B's routing table should contain Node A.");
         }
 
         private DhtNode CreateNode(int port)
         {
-            var storage = new InMemoryDhtStorage();
-            var keyStore = new InMemoryKeyStore();
-            var keyPairService = new KeyPairService(keyStore);
-
-            // Generate keys now so we don't have async issues in constructor (though logic handles it)
-            keyPairService.GenerateKeyPairBase64Async().Wait();
-
-            var mockConfig = new Moq.Mock<Microsoft.Extensions.Configuration.IConfiguration>();
-            var identity = new NodeIdentity(keyPairService, mockConfig.Object, keyStore);
-            var transport = new TcpTransport(port);
-
-            var mockTracker = new Moq.Mock<MangaMesh.Peer.Core.Tracker.ITrackerClient>();
-            var connectionInfo = new ConsoleNodeConnectionInfoProvider();
-
-            var node = new DhtNode(identity, transport, storage, keyPairService, keyStore, mockTracker.Object, connectionInfo);
+            var (node, transport) = TestNodeFactory.CreateNode(port);
 
             var router = new ProtocolRouter();
             var handler = new DhtProtocolHandler(node);
@@ -103,26 +82,6 @@ namespace MangaMesh.Peer.Tests
 
             node.StartWithMaintenance(enableBootstrap: false);
             return node;
-        }
-
-        private class InMemoryKeyStore : IKeyStore
-        {
-            private PublicPrivateKeyPair? _pair;
-
-            public Task<PublicPrivateKeyPair?> GetAsync()
-            {
-                return Task.FromResult(_pair);
-            }
-
-            public Task SaveAsync(string publicKeyBase64, string privateKeyBase64)
-            {
-                _pair = new PublicPrivateKeyPair
-                {
-                    PublicKeyBase64 = publicKeyBase64,
-                    PrivateKeyBase64 = privateKeyBase64
-                };
-                return Task.CompletedTask;
-            }
         }
     }
 }
