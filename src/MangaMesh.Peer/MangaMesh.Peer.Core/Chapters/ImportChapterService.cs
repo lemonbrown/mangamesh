@@ -18,7 +18,7 @@ namespace MangaMesh.Peer.Core.Chapters
         private readonly IManifestStore _manifestStore;
         private readonly ITrackerClient _trackerClient;
         private readonly IKeyStore _keyStore;
-        private readonly INodeIdentityService _nodeIdentity;
+        private readonly INodeIdentity _nodeIdentity;
         private readonly IKeyPairService _keyPairService;
         private readonly IChunkIngester _chunkIngester;
 
@@ -27,7 +27,7 @@ namespace MangaMesh.Peer.Core.Chapters
             IManifestStore manifestStore,
             ITrackerClient trackerClient,
             IKeyStore keyStore,
-            INodeIdentityService nodeIdentity,
+            INodeIdentity nodeIdentity,
             IKeyPairService keyPairService,
             IChunkIngester chunkIngester)
         {
@@ -194,7 +194,7 @@ namespace MangaMesh.Peer.Core.Chapters
                 // Step 5.2 publish to trackers
                 var announceRequest = new Shared.Models.AnnounceManifestRequest
                 {
-                    NodeId = _nodeIdentity.NodeId,
+                    NodeId = Convert.ToHexString(_nodeIdentity.NodeId).ToLowerInvariant(),
                     ManifestHash = hash,
                     SchemaVersion = chapterManifest.SchemaVersion,
                     SeriesId = chapterManifest.SeriesId,
@@ -301,6 +301,26 @@ namespace MangaMesh.Peer.Core.Chapters
 
             // 3. Solve Challenge
             var signature = _keyPairService.SolveChallenge(challenge.Nonce, keys.PrivateKeyBase64);
+
+            // 3.5. Register node with tracker (required before announcing manifests)
+            try
+            {
+                //// Get all manifests this node hosts
+                //var manifests = await _manifestStore.GetAllAsync();
+                //var manifestHashes = manifests.Select(m => m.Value).ToList();
+
+                //var announceRequest = new Shared.Models.AnnounceRequest(
+                //    request.NodeId,
+                //    manifestHashes);
+
+                //await _trackerClient.AnnounceAsync(announceRequest);
+                //Console.WriteLine($"Node {request.NodeId} registered with {manifestHashes.Count} manifests");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to register node: {ex.Message}");
+                // Continue anyway - node might already be registered
+            }
 
             // 4. Authorize Manifest
             var authRequest = new Shared.Models.AuthorizeManifestRequest

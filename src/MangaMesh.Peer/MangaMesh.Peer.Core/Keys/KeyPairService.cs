@@ -63,6 +63,18 @@ namespace MangaMesh.Peer.Core.Keys
 
             using var key = Key.Import(SignatureAlgorithm.Ed25519, privateKeyBytes, KeyBlobFormat.RawPrivateKey);
 
+            // Get public key for debugging
+            var publicKeyBytes = key.Export(KeyBlobFormat.RawPublicKey);
+
+            Console.WriteLine($"=== Signing Debug ===");
+            Console.WriteLine($"Nonce (base64): {nonceBase64}");
+            Console.WriteLine($"Nonce (hex): {Convert.ToHexString(nonceBytes)}");
+            Console.WriteLine($"Nonce length: {nonceBytes.Length} bytes");
+            Console.WriteLine($"Private key length: {privateKeyBytes.Length} bytes");
+            Console.WriteLine($"Public key (base64): {Convert.ToBase64String(publicKeyBytes)}");
+            Console.WriteLine($"Public key (hex): {Convert.ToHexString(publicKeyBytes)}");
+            Console.WriteLine($"Public key length: {publicKeyBytes.Length} bytes");
+
             // --------------------------
             // 4️⃣ Sign the nonce
             // --------------------------
@@ -75,6 +87,16 @@ namespace MangaMesh.Peer.Core.Keys
             }
 
             string signatureBase64 = Convert.ToBase64String(signatureBytes);
+
+            Console.WriteLine($"Signature (base64): {signatureBase64}");
+            Console.WriteLine($"Signature (hex): {Convert.ToHexString(signatureBytes)}");
+            Console.WriteLine($"Signature length: {signatureBytes.Length} bytes");
+
+            // Self-verify the signature locally
+            var publicKeyBase64 = Convert.ToBase64String(publicKeyBytes);
+            var selfVerify = Verify(publicKeyBase64, signatureBase64, nonceBase64);
+            Console.WriteLine($"Self-verification result: {selfVerify}");
+            Console.WriteLine($"====================");
 
             return signatureBase64;
         }

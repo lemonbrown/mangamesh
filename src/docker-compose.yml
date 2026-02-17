@@ -67,8 +67,8 @@ services:
       - Dht__Bootstrap=true # Connects to bootstrap nodes
       - Dht__BootstrapNodes=mangamesh.peer.core:4200
       # Peer Node Identity
-      - Node__PublicKey=i1G2y3J4k5L6m7N8o9P0q1R2s3T4u5V6w7X8y9Z0a1b=
-      - Node__PrivateKey=c2D3e4F5g6H7i8J9k0L1m2N3o4P5q6R7s8T9u0V1w2x=
+      - Node__PublicKey=1iDmJN2Wt0wIeE9XG+MY5VLO/SRBWjjrFE9LWHKuVJ4=
+      - Node__PrivateKey=MTF5HdljRJwUi6BhacpexnvJ/gMtcC+qs5bijv9I0MY=
     ports:
       # API port not exposed to host directly, accessed via UI proxy or internal network
       - "3000:3000" # DHT Port

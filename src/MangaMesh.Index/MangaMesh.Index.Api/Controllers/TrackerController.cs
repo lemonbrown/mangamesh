@@ -308,7 +308,7 @@ namespace MangaMesh.Index.Api.Controllers
             // 4. Save to store
             var entry = new ManifestEntry
             {
-                ManifestHash = request.ManifestHash.ToString(),
+                ManifestHash = request.ManifestHash.Value,
                 SeriesId = request.SeriesId,
                 ChapterId = request.ChapterId,
                 ChapterNumber = request.ChapterNumber,

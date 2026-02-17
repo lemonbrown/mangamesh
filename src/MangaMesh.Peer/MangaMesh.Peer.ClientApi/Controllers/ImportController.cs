@@ -40,6 +40,13 @@ namespace MangaMesh.Peer.ClientApi.Controllers
         public async Task<ActionResult<ImportResultDto>> ImportChapter(
             [FromBody] ImportChapterRequestDto request)
         {
+            Console.WriteLine($"=== Import Chapter Request ===");
+            Console.WriteLine($"SeriesId: {request.SeriesId}");
+            Console.WriteLine($"ChapterNumber: {request.ChapterNumber}");
+            Console.WriteLine($"SourcePath: {request.SourcePath}");
+            Console.WriteLine($"Source: {request.Source}");
+            Console.WriteLine($"ExternalMangaId: {request.ExternalMangaId}");
+            Console.WriteLine($"==============================");
 
             ImportResultDto result;
             try
@@ -53,6 +60,8 @@ namespace MangaMesh.Peer.ClientApi.Controllers
             catch (Exception ex)
             {
                 // General error
+                Console.WriteLine($"ERROR: Import failed: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return BadRequest(ex.Message);
             }
 
@@ -99,6 +108,8 @@ namespace MangaMesh.Peer.ClientApi.Controllers
         }
 
         [HttpPost("upload")]
+        [RequestSizeLimit(524_288_000)] // 500 MB
+        [RequestFormLimits(MultipartBodyLengthLimit = 524_288_000)]
         public async Task<ActionResult<List<AnalyzedChapterDto>>> UploadChapter(
             [FromForm] IFormFileCollection files)
         {

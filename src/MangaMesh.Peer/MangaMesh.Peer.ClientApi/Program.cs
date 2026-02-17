@@ -21,6 +21,12 @@ var dataPath = Path.Combine(AppContext.BaseDirectory, "input");
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Kestrel to accept larger request bodies (500MB for manga uploads)
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 524_288_000; // 500 MB
+});
+
 var trackerUrl = builder.Configuration["TrackerUrl"] ?? "https://localhost:7030";
 
 // Add services to the container.
@@ -37,6 +43,14 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddControllers();
+
+// Configure form options for large file uploads
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 524_288_000; // 500 MB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
+});
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

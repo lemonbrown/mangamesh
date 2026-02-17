@@ -244,7 +244,7 @@ public class SeriesController : ControllerBase
     [HttpGet("{seriesId}/chapter/{chapterId}/manifest/{manifestHash}/read")]
     public IActionResult GetChapterRead(string seriesId, string chapterId, string manifestHash)
     {
-        var gatewayUrl = _configuration["GatewayUrl"] ?? "http://localhost:5170";
-        return RedirectPreserveMethod($"{gatewayUrl}/api/read/{manifestHash}");
+        // Redirect to /gateway/ which will be proxied by Komorii's nginx to the Gateway
+        return RedirectPreserveMethod($"/gateway/api/read/{manifestHash}");
     }
 }
