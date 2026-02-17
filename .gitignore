@@ -416,3 +416,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+/data
+/output
+/src/MangaMesh.SeriesScraper/MangaMesh.SeriesScraper.Cli/data
