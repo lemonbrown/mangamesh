@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MangaMesh.Peer.Core\MangaMesh.Peer.Core.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
   </ItemGroup>
 
 </Project>

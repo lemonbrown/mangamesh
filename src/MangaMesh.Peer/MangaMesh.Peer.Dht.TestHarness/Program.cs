@@ -163,6 +163,9 @@ namespace MangaMesh.Peer.Dht.TestHarness
                                 Console.WriteLine($"Private Key: {currentKeys.PrivateKeyBase64}");
                             }
                             break;
+                        case "test-ser":
+                            manager.TestSer();
+                            break;
                         default:
                             Console.WriteLine("Unknown command");
                             break;
@@ -281,7 +284,8 @@ namespace MangaMesh.Peer.Dht.TestHarness
             var keyStore = new InMemoryKeyStore();
             var keyPairService = new KeyPairService(keyStore);
 
-            var identity = new NodeIdentity(keyPairService);
+            var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+            var identity = new NodeIdentity(keyPairService, config, keyStore);
             var transport = new TcpTransport(port);
 
             var tracker = new TrackerMock();
@@ -300,6 +304,20 @@ namespace MangaMesh.Peer.Dht.TestHarness
             _nodes[port] = node;
             _transports[port] = transport;
             Console.WriteLine($"Started node at port {port}. ID: {Convert.ToHexString(node.Identity.NodeId)}");
+        }
+
+        public void TestSer()
+        {
+            var msg = new MangaMesh.Peer.Core.Transport.DhtMessage 
+            { 
+                SenderNodeId = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }, 
+                Type = MangaMesh.Peer.Core.Transport.DhtMessageType.Ping 
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(msg);
+            Console.WriteLine($"Serialized: {json}");
+            
+            var deserialized = System.Text.Json.JsonSerializer.Deserialize<MangaMesh.Peer.Core.Transport.DhtMessage>(json);
+            Console.WriteLine($"Deserialized: {Convert.ToHexString(deserialized.SenderNodeId)}");
         }
 
         public void Bootstrap(int port, string host, int remotePort)

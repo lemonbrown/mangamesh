@@ -212,21 +212,19 @@ namespace MangaMesh.Peer.Core.Node
                 {
                     Console.WriteLine($"Failed to load bootstrap nodes: {ex.Message}");
                 }
+            }
 
-                //ensure keys are available
-                var keys = _keyStore.GetAsync().Result;
+            //ensure keys are available
+            var keys = _keyStore.GetAsync().Result;
 
-                if (keys == null)
-                    _keypairService.GenerateKeyPairBase64Async().Wait();
+            if (keys == null)
+                _keypairService.GenerateKeyPairBase64Async().Wait();
 
-                _running = true;
+            _running = true;
 
-                // Message loop is removed as it is now handled by ProtocolRouter/Handler logic externally
-
-                if (enableBootstrap)
-                {
-                    Task.Run(async () => await BootstrapAsync(bootstrapNodes));
-                }
+            if (enableBootstrap)
+            {
+                Task.Run(async () => await BootstrapAsync(bootstrapNodes));
             }
         }
 
@@ -440,6 +438,7 @@ namespace MangaMesh.Peer.Core.Node
         {
             // simplified iterative lookup
             var closestNodes = new List<RoutingEntry>();
+            var queriedNodes = new HashSet<string>();
 
             if (bootstrap != null)
             {
@@ -450,9 +449,16 @@ namespace MangaMesh.Peer.Core.Node
                 closestNodes.AddRange(FindClosestNodes(nodeId, 20));
             }
 
-            foreach (var node in closestNodes)
+            // To avoid concurrent modification, we iterate by index, observing that we might add to the list
+            for (int i = 0; i < closestNodes.Count; i++)
             {
-                Console.WriteLine($"Looking for node [{node.NodeId}] - [{node.Address.Host}:{node.Address.Port}]");
+                var node = closestNodes[i];
+                var nodeKey = $"{node.Address.Host}:{node.Address.Port}";
+                
+                if (queriedNodes.Contains(nodeKey)) continue;
+                queriedNodes.Add(nodeKey);
+
+                Console.WriteLine($"Looking for node [{Convert.ToHexString(node.NodeId ?? Array.Empty<byte>())}] - [{node.Address.Host}:{node.Address.Port}]");
 
                 var message = new DhtMessage
                 {
@@ -466,9 +472,60 @@ namespace MangaMesh.Peer.Core.Node
 
                 var response = await SendDhtMessageAsync(node.Address, message, waitForResponse: true);
 
-                if (response != null && response.Type == DhtMessageType.Nodes)
+                if (response != null)
                 {
-                    // Update routing table logic omitted for brevity, but this would parse nodes
+                    Console.WriteLine($"Received response from {response.ComputedSenderIp}:{response.SenderPort}. SenderID len: {response.SenderNodeId?.Length ?? 0}");
+
+                    // If the node we queried didn't have an ID (e.g. bootstrap), save it now
+                    if ((node.NodeId == null || node.NodeId.Length == 0) && response.SenderNodeId != null && response.SenderNodeId.Length > 0)
+                    {
+                        Console.WriteLine($"Updating NodeID for bootstrap node to {Convert.ToHexString(response.SenderNodeId)}");
+                        node.NodeId = response.SenderNodeId;
+                        
+                        // Also update in routing table immediately if possible
+                        UpdateRoutingTable(node.NodeId, node.Address);
+                    }
+
+                    if (response.Type == DhtMessageType.Nodes)
+                    {
+                        try
+                        {
+                            var nodesJson = Encoding.UTF8.GetString(response.Payload);
+                            var discoveredNodes = JsonSerializer.Deserialize<List<NodeEntry>>(nodesJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            if (discoveredNodes != null)
+                            {
+                                foreach (var discovered in discoveredNodes)
+                                {
+                                    if (!string.IsNullOrEmpty(discovered.NodeId) && !string.IsNullOrEmpty(discovered.Host) && discovered.Port > 0)
+                                    {
+                                        var discoveredId = Convert.FromHexString(discovered.NodeId);
+                                        
+                                        var entry = new RoutingEntry
+                                        {
+                                            NodeId = discoveredId,
+                                            Address = new NodeAddress(discovered.Host, discovered.Port),
+                                            LastSeenUtc = DateTime.UtcNow
+                                        };
+                                        UpdateRoutingTable(entry.NodeId, entry.Address);
+                                        
+                                        // Add to search list if not already present
+                                        if (!closestNodes.Any(n => n.NodeId != null && n.NodeId.SequenceEqual(discoveredId)))
+                                        {
+                                            closestNodes.Add(entry);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to parse FindNode response: {ex.Message}");
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"Timeout or no response from {node.Address.Host}:{node.Address.Port}");
                 }
             }
             return closestNodes;
@@ -507,13 +564,17 @@ namespace MangaMesh.Peer.Core.Node
                 try
                 {
                     var foundNodes = await FindNodeAsync(randomId, bootstrap);
+                    bool success = false;
                     foreach (var node in foundNodes)
                     {
-                        if (node.NodeId != null)
+                        if (node.NodeId != null && node.NodeId.Length > 0)
+                        {
                             UpdateRoutingTable(node.NodeId, node.Address);
+                            success = true;
+                        }
                     }
 
-                    if (foundNodes.Count > 0)
+                    if (success)
                     {
                         break;
                     }
@@ -706,8 +767,13 @@ namespace MangaMesh.Peer.Core.Node
 
         private byte[] SerializeNodes(List<RoutingEntry> nodes)
         {
-            // naive JSON serialization
-            var addresses = nodes.ConvertAll(n => new { Host = n.Address.Host, Port = n.Address.Port });
+            // naive JSON serialization - include NodeId so receivers can populate routing tables
+            var addresses = nodes.ConvertAll(n => new
+            {
+                Host = n.Address.Host,
+                Port = n.Address.Port,
+                NodeId = Convert.ToHexString(n.NodeId)
+            });
             return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(addresses);
         }
 
@@ -758,5 +824,12 @@ namespace MangaMesh.Peer.Core.Node
     {
         public string Host { get; set; } = string.Empty;
         public int Port { get; set; }
+    }
+
+    public class NodeEntry
+    {
+        public string Host { get; set; } = string.Empty;
+        public int Port { get; set; }
+        public string NodeId { get; set; } = string.Empty;
     }
 }

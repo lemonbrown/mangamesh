@@ -162,8 +162,28 @@ contentHandler.DhtNode = dhtNode;
 // Start Node
 if (config.Enabled)
 {
-    // Generating identity if needed is handled inside DhtNode.Start
-    dhtNode.StartWithMaintenance(enableBootstrap: true);
+    // Parse bootstrap nodes from config (e.g. "host1:port1,host2:port2")
+    List<RoutingEntry>? bootstrapNodes = null;
+    if (!string.IsNullOrEmpty(config.BootstrapNodes))
+    {
+        bootstrapNodes = new List<RoutingEntry>();
+        var nodes = config.BootstrapNodes.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var node in nodes)
+        {
+            var parts = node.Trim().Split(':');
+            if (parts.Length == 2 && int.TryParse(parts[1], out var port))
+            {
+                bootstrapNodes.Add(new RoutingEntry
+                {
+                    NodeId = Array.Empty<byte>(),
+                    Address = new NodeAddress(parts[0], port),
+                    LastSeenUtc = DateTime.UtcNow
+                });
+            }
+        }
+    }
+
+    dhtNode.StartWithMaintenance(enableBootstrap: true, bootstrapNodes);
     Console.WriteLine($"[Gateway] Started Mesh Node on port {config.Port}");
 }
 

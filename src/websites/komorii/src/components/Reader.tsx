@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { readChapter } from '../api/series';
+import { readChapter, getChapterDetails } from '../api/series';
 
 import type { FullChapterManifest } from '../types/api';
 
@@ -16,15 +16,35 @@ export default function Reader() {
 
     useEffect(() => {
         async function load() {
-            if (!seriesId || !chapterId || !manifestHash) {
-                setError('Missing required parameters (seriesId, chapterId, or manifest hash)');
+            if (!seriesId || !chapterId) {
+                setError('Missing required parameters (seriesId or chapterId)');
                 setLoading(false);
                 return;
             }
 
+            // Auto-select first manifest if none specified in URL
+            let resolvedManifestHash = manifestHash;
+            if (!resolvedManifestHash) {
+                try {
+                    const chapterDetails = await getChapterDetails(seriesId, chapterId);
+                    const manifests = chapterDetails.manifests ? [...chapterDetails.manifests] : [];
+                    if (manifests.length === 0) {
+                        setError('No manifests available for this chapter.');
+                        setLoading(false);
+                        return;
+                    }
+                    resolvedManifestHash = manifests[0].manifestHash;
+                } catch (e) {
+                    console.error(e);
+                    setError('Failed to load chapter details.');
+                    setLoading(false);
+                    return;
+                }
+            }
+
             try {
                 // This call ensures content is synced locally via P2P (on the node)
-                const data = await readChapter(seriesId, chapterId, manifestHash);
+                const data = await readChapter(seriesId, chapterId, resolvedManifestHash);
 
                 if (data.nodes && data.nodes.length > 0) {
                     let node = data.nodes[0];

@@ -256,6 +256,24 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Seed DHT storage from persisted manifests so the node announces them
+using (var seedScope = app.Services.CreateScope())
+{
+    var manifestStore = seedScope.ServiceProvider.GetRequiredService<IManifestStore>();
+    var dhtStorage = app.Services.GetRequiredService<IDhtStorage>();
+    var nodeIdentity = app.Services.GetRequiredService<INodeIdentity>();
+    var hashes = await manifestStore.GetAllHashesAsync();
+    foreach (var hash in hashes)
+    {
+        var hashBytes = Convert.FromHexString(hash.Value);
+        dhtStorage.StoreContent(hashBytes, nodeIdentity.NodeId);
+    }
+    if (hashes.Any())
+    {
+        Console.WriteLine($"Seeded DHT storage with {hashes.Count()} manifest(s) from database.");
+    }
+}
+
 app.UseMiddleware<TrackerProxyMiddleware>();
 
 app.MapControllers();

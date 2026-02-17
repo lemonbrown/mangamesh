@@ -6,4 +6,5 @@ public class GatewayConfig
     public int Port { get; set; } = 8080;
     public string TrackerUrl { get; set; } = "https://localhost:7030";
     public int CacheTtlMinutes { get; set; } = 30;
+    public string? BootstrapNodes { get; set; }
 }

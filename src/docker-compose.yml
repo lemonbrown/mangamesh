@@ -13,6 +13,7 @@ services:
     environment:
       - DOTNET_ENVIRONMENT=Development
       - Dht__Port=4200
+      - Dht__Bootstrap=false
       - TrackerUrl=http://mangamesh.index.api:7030
       # Bootstrap Node Identity
       - Node__PublicKey=AwimzB+Lesq9GMNs27W2FGC2+aNK0O/ymZHPr9fRyiE=
@@ -33,6 +34,7 @@ services:
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.GatewayApi/Dockerfile
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5170
       - Gateway__Port=4201 # Different internal DHT port
       - Gateway__BootstrapNodes=mangamesh.peer.core:4200
       - Gateway__Enabled=true
@@ -144,6 +146,9 @@ services:
       # Web apps usually need to know where the API is publically reachable.
     ports:
       - "5173:80"
+    depends_on:
+      - mangamesh.index.api
+      - mangamesh.peer.gatewayapi
     networks:
       - mangamesh-net
 

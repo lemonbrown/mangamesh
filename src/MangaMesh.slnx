@@ -9,6 +9,10 @@
     <Project Path="MangaMesh.Peer/MangaMesh.Peer.Dht.TestHarness/MangaMesh.Peer.Dht.TestHarness.csproj" />
     <Project Path="MangaMesh.Peer/MangaMesh.Peer.GatewayApi/MangaMesh.Peer.GatewayApi.csproj" />
   </Folder>
+  <Folder Name="/Scraper/">
+    <Project Path="MangaMesh.SeriesScraper/MangaMesh.SeriesScraper.csproj" />
+    <Project Path="MangaMesh.SeriesScraper/MangaMesh.SeriesScraper.Cli/MangaMesh.SeriesScraper.Cli.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="MangaMesh.Shared/MangaMesh.Shared.csproj" />
   </Folder>
