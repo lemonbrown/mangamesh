@@ -87,7 +87,8 @@ namespace MangaMesh.Peer.Tests
             // Generate keys now so we don't have async issues in constructor (though logic handles it)
             keyPairService.GenerateKeyPairBase64Async().Wait();
 
-            var identity = new NodeIdentity(keyPairService);
+            var mockConfig = new Moq.Mock<Microsoft.Extensions.Configuration.IConfiguration>();
+            var identity = new NodeIdentity(keyPairService, mockConfig.Object, keyStore);
             var transport = new TcpTransport(port);
 
             var mockTracker = new Moq.Mock<MangaMesh.Peer.Core.Tracker.ITrackerClient>();

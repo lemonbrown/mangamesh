@@ -57,7 +57,9 @@ namespace MangaMesh.Peer.Dht.TestHarness
             var keyPairService = new KeyPairService(keyStore);
 
             // Create a consistent identity for the harness publisher
-            var harnessIdentity = new SimpleNodeIdentity();
+            INodeIdentityService harnessIdentity = new SimpleNodeIdentity();
+            var identityConfig = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+            INodeIdentity cryptoIdentity = new NodeIdentity(keyPairService, identityConfig, keyStore);
 
             // Setup Tracker Client (Index API)
             // Assuming Index API is running on localhost:5176 based on previous session, or 5243 default
@@ -69,7 +71,7 @@ namespace MangaMesh.Peer.Dht.TestHarness
                 manifestStore,
                 trackerClient,
                 keyStore,
-                harnessIdentity,
+                cryptoIdentity,
                 keyPairService,
                 chunkIngester
             );

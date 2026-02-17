@@ -204,7 +204,8 @@ namespace MangaMesh.Peer.Tests
             var keyPairService = new KeyPairService(keyStore);
             keyPairService.GenerateKeyPairBase64Async().Wait();
 
-            var identity = new NodeIdentity(keyPairService);
+            var mockConfig = new Mock<Microsoft.Extensions.Configuration.IConfiguration>();
+            var identity = new NodeIdentity(keyPairService, mockConfig.Object, keyStore);
             var transport = new TcpTransport(port);
             
             var mockKeyStore = new Mock<IKeyStore>(); // Need proper KeyStore mock? 

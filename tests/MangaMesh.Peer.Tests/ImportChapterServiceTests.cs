@@ -13,15 +13,15 @@ namespace MangaMesh.Peer.Tests
     [TestClass]
     public class ImportChapterServiceTests
     {
-        private Mock<IBlobStore> _mockBlobStore;
-        private Mock<IManifestStore> _mockManifestStore;
-        private Mock<ITrackerClient> _mockTrackerClient;
-        private Mock<IKeyStore> _mockKeyStore;
-        private Mock<INodeIdentityService> _mockNodeIdentity;
-        private Mock<IKeyPairService> _mockKeyPairService;
-        private Mock<IChunkIngester> _mockChunkIngester;
-        private ImportChapterService _service;
-        private string _tempDirectory;
+        private Mock<IBlobStore> _mockBlobStore = null!;
+        private Mock<IManifestStore> _mockManifestStore = null!;
+        private Mock<ITrackerClient> _mockTrackerClient = null!;
+        private Mock<IKeyStore> _mockKeyStore = null!;
+        private Mock<INodeIdentity> _mockNodeIdentity = null!;
+        private Mock<IKeyPairService> _mockKeyPairService = null!;
+        private Mock<IChunkIngester> _mockChunkIngester = null!;
+        private ImportChapterService _service = null!;
+        private string _tempDirectory = null!;
 
         [TestInitialize]
         public void Setup()
@@ -30,7 +30,7 @@ namespace MangaMesh.Peer.Tests
             _mockManifestStore = new Mock<IManifestStore>();
             _mockTrackerClient = new Mock<ITrackerClient>();
             _mockKeyStore = new Mock<IKeyStore>();
-            _mockNodeIdentity = new Mock<INodeIdentityService>();
+            _mockNodeIdentity = new Mock<INodeIdentity>();
             _mockKeyPairService = new Mock<IKeyPairService>();
             _mockChunkIngester = new Mock<IChunkIngester>();
 
@@ -81,7 +81,7 @@ namespace MangaMesh.Peer.Tests
 
             // 2. Setup Mocks
             _mockChunkIngester.Setup(x => x.IngestAsync(It.IsAny<Stream>(), It.IsAny<string>()))
-                .ReturnsAsync((Stream s, string m) => 
+                .ReturnsAsync((Stream s, string m) =>
                 {
                     // Return dummy page manifest and hash
                     var pm = new PageManifest { FileSize = s.Length };
@@ -93,16 +93,16 @@ namespace MangaMesh.Peer.Tests
                 .ReturnsAsync(("series-123", "Test Series"));
 
             _mockKeyStore.Setup(x => x.GetAsync())
-                .ReturnsAsync(new PublicPrivateKeyPair 
-                { 
-                    PublicKeyBase64 = "pub-key", 
+                .ReturnsAsync(new PublicPrivateKeyPair
+                {
+                    PublicKeyBase64 = "pub-key",
                     PrivateKeyBase64 = Convert.ToBase64String(new byte[32]) // valid length dummy
                 });
 
             _mockManifestStore.Setup(x => x.ExistsAsync(It.IsAny<ManifestHash>()))
                 .ReturnsAsync(false);
 
-            _mockNodeIdentity.Setup(x => x.NodeId).Returns("node-1");
+            _mockNodeIdentity.Setup(x => x.NodeId).Returns(new byte[] { 1, 2, 3 });
 
             _mockTrackerClient.Setup(x => x.CreateChallengeAsync(It.IsAny<string>()))
                 .ReturnsAsync(new Shared.Models.KeyChallengeResponse { ChallengeId = "chal-1", Nonce = "nonce-1" });
@@ -120,7 +120,7 @@ namespace MangaMesh.Peer.Tests
 
             // Verify interactions
             _mockTrackerClient.Verify(x => x.RegisterSeriesAsync(ExternalMetadataSource.MangaDex, "ext-123"), Times.Once);
-            
+
             _mockChunkIngester.Verify(x => x.IngestAsync(It.IsAny<Stream>(), "image/jpeg"), Times.Once); // for .jpg
             _mockChunkIngester.Verify(x => x.IngestAsync(It.IsAny<Stream>(), "image/png"), Times.Once); // for .png
 
@@ -139,6 +139,7 @@ namespace MangaMesh.Peer.Tests
             )), Times.Once);
 
             _mockTrackerClient.Verify(x => x.AnnounceManifestAsync(It.Is<Shared.Models.AnnounceManifestRequest>(req =>
+                req.NodeId == "010203" &&
                 req.ChapterNumber == 1.0f &&
                 !string.IsNullOrEmpty(req.Signature)
             ), It.IsAny<CancellationToken>()), Times.Once);

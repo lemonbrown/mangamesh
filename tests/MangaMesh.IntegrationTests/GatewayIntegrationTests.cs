@@ -25,15 +25,15 @@ namespace MangaMesh.IntegrationTests
         // ... (lines 24-100 irrelevant for replacement context if I narrow it down, but I'll focus on imports and constructor)
         // I'll do two replaces. One for imports, one for constructor.
 
-        private WebApplicationFactory<GatewayApi::Program> _factory;
-        private HttpClient _client;
-        private IDhtNode _gatewayNode;
-        private DhtNode _peerNode; // Node B
-        private TcpTransport _peerTransport;
+        private WebApplicationFactory<GatewayApi::Program> _factory = null!;
+        private HttpClient _client = null!;
+        private IDhtNode _gatewayNode = null!;
+        private DhtNode _peerNode = null!;
+        private TcpTransport _peerTransport = null!;
         private int _gatewayPort;
         private int _peerPort;
 
-        private Mock<IBlobStore> _mockBlobStore;
+        private Mock<IBlobStore> _mockBlobStore = null!;
 
         [TestInitialize]
         public async Task Setup()
@@ -81,7 +81,9 @@ namespace MangaMesh.IntegrationTests
             var mockKeyPairService = new Mock<IKeyPairService>();
             // Valid 32-byte Ed25519 private key (base64) and corresponding public key
             // Generated for testing purposes
-            var validPrivateKeyBase64 = "MC4CAQAwBQYDK2VwBCIEIN5fTqXzn8Qf7r7r7r7r7r7r7r7r7r7r7r7r7r7r7r7r"; // invalid simplistic, need real 32 bytes
+            // Valid 32-byte Ed25519 private key (base64) and corresponding public key
+            // Generated for testing purposes
+            // var validPrivateKeyBase64 = "MC4CAQAwBQYDK2VwBCIEIN5fTqXzn8Qf7r7r7r7r7r7r7r7r7r7r7r7r7r7r7r7r"; // invalid simplistic, need real 32 bytes
             // Let's use a simpler known 32-byte key: 32 bytes of 'a'
             var dummyKey32Bytes = new byte[32];
             for (int i = 0; i < 32; i++) dummyKey32Bytes[i] = (byte)i;
@@ -96,13 +98,14 @@ namespace MangaMesh.IntegrationTests
             // Setup Peer Node (Node B)
             // We need a real DHT node running to respond to the Gateway
             _peerTransport = new TcpTransport(_peerPort);
-            var identity = new NodeIdentity(mockKeyPairService.Object);
+            var mockConfig = new Mock<Microsoft.Extensions.Configuration.IConfiguration>();
+            var mockKeyStore = new Mock<IKeyStore>();
+
+            var identity = new NodeIdentity(mockKeyPairService.Object, mockConfig.Object, mockKeyStore.Object);
             //await identity.InitializeAsync();
 
             var storage = new InMemoryDhtStorage(); // Using Client internal storage if accessible? No, likely public or we use same trick
                                                     // InMemoryDhtStorage is in MangaMesh.Client.Node namespace
-
-            var mockKeyStore = new Mock<IKeyStore>();
 
             var mockTracker = new Mock<ITrackerClient>();
             var connectionInfo = new ConsoleNodeConnectionInfoProvider();
@@ -231,7 +234,7 @@ namespace MangaMesh.IntegrationTests
             Assert.AreEqual(manifestHash, manifest.ContentHash);
 
             var contentStr = Encoding.UTF8.GetString(manifest.Data);
-            Assert.IsTrue(contentStr.Contains("Test Series"));
+            StringAssert.Contains(contentStr, "Test Series");
         }
 
         [TestMethod]
