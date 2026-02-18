@@ -1,4 +1,4 @@
-using NSec.Cryptography;
+﻿using NSec.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MangaMesh.Peer.Core.Keys;
@@ -515,6 +515,11 @@ namespace MangaMesh.Peer.Core.Node
             }
 
             var senderAddress = _routingTable.GetAddressForNode(message.SenderNodeId);
+            if (senderAddress == null && !string.IsNullOrEmpty(message.ComputedSenderIp) && message.SenderPort > 0)
+            {
+                senderAddress = new NodeAddress(message.ComputedSenderIp, message.SenderPort);
+            }
+
             if (senderAddress != null)
                 await SendDhtMessageAsync(senderAddress, reply);
         }
@@ -718,6 +723,11 @@ namespace MangaMesh.Peer.Core.Node
                 RequestId = message.RequestId
             };
             var senderAddress = _routingTable.GetAddressForNode(message.SenderNodeId);
+            if (senderAddress == null && !string.IsNullOrEmpty(message.ComputedSenderIp) && message.SenderPort > 0)
+            {
+                senderAddress = new NodeAddress(message.ComputedSenderIp, message.SenderPort);
+            }
+
             if (senderAddress != null)
                 await SendDhtMessageAsync(senderAddress, pong);
         }
@@ -746,6 +756,11 @@ namespace MangaMesh.Peer.Core.Node
             };
 
             var senderAddress = _routingTable.GetAddressForNode(message.SenderNodeId);
+            if (senderAddress == null && !string.IsNullOrEmpty(message.ComputedSenderIp) && message.SenderPort > 0)
+            {
+                senderAddress = new NodeAddress(message.ComputedSenderIp, message.SenderPort);
+            }
+
             if (senderAddress != null)
                 await SendDhtMessageAsync(senderAddress, reply);
         }
