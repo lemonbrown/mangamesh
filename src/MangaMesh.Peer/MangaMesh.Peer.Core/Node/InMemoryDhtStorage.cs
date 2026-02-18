@@ -31,7 +31,7 @@ namespace MangaMesh.Peer.Core.Node
 
         public List<byte[]> GetAllContentHashes()
         {
-            return _store.Values.SelectMany(x => x).Distinct().ToList();
+            return _store.Keys.Select(Convert.FromBase64String).ToList();
         }
     }
 }

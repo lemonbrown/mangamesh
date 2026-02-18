@@ -39,6 +39,7 @@ services:
       - Gateway__BootstrapNodes=mangamesh.peer.core:4200
       - Gateway__Enabled=true
       - Gateway__TrackerUrl=http://mangamesh.index.api:7030
+      - Gateway__PublicBaseUrl=http://localhost:5173/gateway
       - GatewayCache__MaxCacheSizeMb=500
       # Gateway Node Identity
       - Node__PublicKey=SCwPpOukKLuCdL+D2ut99JPG6vr7MKBEJFYfhTQVxqo=

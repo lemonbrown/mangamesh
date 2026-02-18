@@ -191,9 +191,11 @@ if (transport is TcpTransport tcp)
     tcp.OnMessage += router.RouteAsync;
 }
 
-// Wire up DHT to Content Handler (for responses)
+// Wire up DHT node to both protocol handlers so incoming messages are dispatched correctly
 var contentHandler = app.Services.GetRequiredService<ContentProtocolHandler>();
 contentHandler.DhtNode = dhtNode;
+var dhtHandler = app.Services.GetRequiredService<DhtProtocolHandler>();
+dhtHandler.DhtNode = dhtNode;
 
 // Start Node
 if (config.Enabled)

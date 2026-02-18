@@ -24,6 +24,7 @@ namespace MangaMesh.Peer.Core.Chapters
         private readonly IEnumerable<IChapterSourceReader> _sourceReaders;
         private readonly IImageFormatProvider _imageFormats;
         private readonly IManifestSigningService _manifestSigning;
+        private readonly IDhtNode _dhtNode;
         private readonly ILogger<ImportChapterService> _logger;
 
         public ImportChapterService(
@@ -37,6 +38,7 @@ namespace MangaMesh.Peer.Core.Chapters
             IEnumerable<IChapterSourceReader> sourceReaders,
             IImageFormatProvider imageFormats,
             IManifestSigningService manifestSigning,
+            IDhtNode dhtNode,
             ILogger<ImportChapterService> logger)
         {
             _blobStore = blobStore;
@@ -49,6 +51,7 @@ namespace MangaMesh.Peer.Core.Chapters
             _sourceReaders = sourceReaders;
             _imageFormats = imageFormats;
             _manifestSigning = manifestSigning;
+            _dhtNode = dhtNode;
             _logger = logger;
         }
 
@@ -77,6 +80,11 @@ namespace MangaMesh.Peer.Core.Chapters
                         Path = name,
                         Size = pageManifest.FileSize
                     });
+
+                    // Announce page manifest and all chunks to DHT so the gateway can find them
+                    await _dhtNode.StoreAsync(Convert.FromHexString(pageHash));
+                    foreach (var chunkHash in pageManifest.Chunks)
+                        await _dhtNode.StoreAsync(Convert.FromHexString(chunkHash));
                 }
             }
 
@@ -153,6 +161,9 @@ namespace MangaMesh.Peer.Core.Chapters
             // Re-save with signature
             chapterManifest = chapterManifest with { Signature = signedManifest.Signature };
             await _manifestStore.SaveAsync(hash, chapterManifest);
+
+            // Announce to DHT so the gateway can discover this node as a provider
+            await _dhtNode.StoreAsync(Convert.FromHexString(hash.Value));
 
             return new ImportChapterResult
             {

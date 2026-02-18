@@ -5,21 +5,24 @@ using System.Text.Json;
 using System.Text;
 using MangaMesh.Peer.Core.Transport;
 using MangaMesh.Peer.Core.Blob;
+using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Node;
+using MangaMesh.Shared.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MangaMesh.Peer.Core.Content
 {
     public class ContentProtocolHandler : IProtocolHandler
     {
         private readonly ITransport _transport;
-        private readonly IBlobStore _blobStore;
+        private readonly IServiceScopeFactory _scopeFactory;
 
         public IDhtNode? DhtNode { get; set; }
 
-        public ContentProtocolHandler(ITransport transport, IBlobStore blobStore)
+        public ContentProtocolHandler(ITransport transport, IServiceScopeFactory scopeFactory)
         {
             _transport = transport;
-            _blobStore = blobStore;
+            _scopeFactory = scopeFactory;
         }
 
         public ProtocolKind Kind => ProtocolKind.Content;
@@ -40,37 +43,34 @@ namespace MangaMesh.Peer.Core.Content
 
         private async Task HandleManifestAsync(NodeAddress from, GetManifest m)
         {
-            // Try to find the manifest in the blob store using its hash
-            // This assumes Manifests are stored as generic blobs, which is true in the new design
-            var hash = new BlobHash(m.ContentHash);
+            using var scope = _scopeFactory.CreateScope();
+            var manifestStore = scope.ServiceProvider.GetRequiredService<IManifestStore>();
+            var manifest = await manifestStore.GetAsync(new ManifestHash(m.ContentHash));
 
-            if (_blobStore.Exists(hash))
+            if (manifest != null)
             {
-                using var stream = await _blobStore.OpenReadAsync(hash);
-                if (stream != null)
+                var json = JsonSerializer.Serialize(manifest);
+                var content = Encoding.UTF8.GetBytes(json);
+
+                var response = new ManifestData
                 {
-                    using var ms = new MemoryStream();
-                    await stream.CopyToAsync(ms);
-                    var content = ms.ToArray();
+                    ContentHash = m.ContentHash,
+                    Data = content,
+                    RequestId = m.RequestId
+                };
 
-                    var response = new ManifestData
-                    {
-                        ContentHash = m.ContentHash,
-                        Data = content,
-                        RequestId = m.RequestId
-                    };
-
-                    await SendResponseAsync(from, response, m.SenderPort);
-                }
+                await SendResponseAsync(from, response, m.SenderPort);
             }
         }
 
         private async Task HandleBlobAsync(NodeAddress from, GetBlob b)
         {
+            using var scope = _scopeFactory.CreateScope();
+            var blobStore = scope.ServiceProvider.GetRequiredService<IBlobStore>();
             var hash = new BlobHash(b.BlobHash);
-            if (_blobStore.Exists(hash))
+            if (blobStore.Exists(hash))
             {
-                using var stream = await _blobStore.OpenReadAsync(hash);
+                using var stream = await blobStore.OpenReadAsync(hash);
                 if (stream != null)
                 {
                     using var ms = new MemoryStream();

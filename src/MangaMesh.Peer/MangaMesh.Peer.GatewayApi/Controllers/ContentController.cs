@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace MangaMesh.Peer.GatewayApi.Controllers;
 
 [ApiController]
-[Route("content")]
+[Route("api")]
 public class ContentController : ControllerBase
 {
     private readonly GatewayService _service;

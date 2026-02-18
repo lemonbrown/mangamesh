@@ -8,10 +8,12 @@ namespace MangaMesh.Peer.GatewayApi.Controllers;
 public class GatewayController : ControllerBase
 {
     private readonly GatewayService _gateway;
+    private readonly IConfiguration _configuration;
 
-    public GatewayController(GatewayService gateway)
+    public GatewayController(GatewayService gateway, IConfiguration configuration)
     {
         _gateway = gateway;
+        _configuration = configuration;
     }
 
     [HttpGet("manifests/{hash}")]
@@ -52,7 +54,7 @@ public class GatewayController : ControllerBase
                     Filename = f.Path,
                     Size = f.Size
                 }),
-                Nodes = new List<string> { $"{Request.Scheme}://{Request.Host}" }
+                Nodes = new List<string> { _configuration["Gateway:PublicBaseUrl"] ?? $"{Request.Scheme}://{Request.Host}" }
             };
 
             return Ok(response);

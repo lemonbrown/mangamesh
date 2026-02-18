@@ -116,9 +116,16 @@ builder.Services.AddSingleton<IDhtNode>(sp =>
     var requestTracker = new DhtRequestTracker();
     return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
 });
+builder.Services.AddSingleton<DhtProtocolHandler>();
+builder.Services.AddSingleton<ContentProtocolHandler>();
+builder.Services.AddSingleton<ProtocolRouter>(sp =>
+{
+    var router = new ProtocolRouter();
+    router.Register(sp.GetRequiredService<DhtProtocolHandler>());
+    router.Register(sp.GetRequiredService<ContentProtocolHandler>());
+    return router;
+});
 builder.Services.AddHostedService<DhtHostedService>();
-
-
 
 builder.Services.AddMemoryCache();
 
@@ -295,6 +302,17 @@ using (var seedScope = app.Services.CreateScope())
         Console.WriteLine($"Seeded DHT storage with {hashes.Count()} manifest(s) from database.");
     }
 }
+
+// Wire transport → router → DHT/Content handlers (mirrors Core peer setup)
+var dhtNode = app.Services.GetRequiredService<IDhtNode>();
+var transport = app.Services.GetRequiredService<ITransport>();
+var router = app.Services.GetRequiredService<ProtocolRouter>();
+var dhtHandler = app.Services.GetRequiredService<DhtProtocolHandler>();
+var contentHandler = app.Services.GetRequiredService<ContentProtocolHandler>();
+dhtHandler.DhtNode = dhtNode;
+contentHandler.DhtNode = dhtNode;
+if (transport is TcpTransport tcpTransport)
+    tcpTransport.OnMessage += router.RouteAsync;
 
 app.UseMiddleware<TrackerProxyMiddleware>();
 

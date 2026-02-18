@@ -124,7 +124,7 @@ export default function Reader() {
                 {manifest.files.map((file, index) => (
                     <div key={file.hash} className="relative bg-gray-900 min-h-[50vh] flex items-center justify-center">
                         <img
-                            src={activeNodeUrl ? `${activeNodeUrl}/api/blob/${file.hash}` : ''}
+                            src={activeNodeUrl ? `${activeNodeUrl}/api/file/${file.hash}` : ''}
                             alt={`Page ${index + 1}`}
                             className="w-full h-auto shadow-2xl"
                             loading="lazy"

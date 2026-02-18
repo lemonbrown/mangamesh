@@ -7,11 +7,10 @@ namespace MangaMesh.Peer.Core.Node
 {
     public class DhtProtocolHandler : IProtocolHandler
     {
-        private readonly IDhtNode _dhtNode;
+        public IDhtNode? DhtNode { get; set; }
 
-        public DhtProtocolHandler(IDhtNode dhtNode)
+        public DhtProtocolHandler()
         {
-            _dhtNode = dhtNode;
         }
 
         public ProtocolKind Kind => ProtocolKind.Dht;
@@ -25,7 +24,10 @@ namespace MangaMesh.Peer.Core.Node
                 if (message != null)
                 {
                     message.ComputedSenderIp = from.Host;
-                    await _dhtNode.HandleMessageAsync(message);
+                    if (DhtNode != null)
+                    {
+                        await DhtNode.HandleMessageAsync(message);
+                    }
                 }
             }
             catch (Exception ex)

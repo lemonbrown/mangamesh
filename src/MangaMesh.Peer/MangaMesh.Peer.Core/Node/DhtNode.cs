@@ -467,7 +467,7 @@ namespace MangaMesh.Peer.Core.Node
                                 });
                             }
                         }
-                        catch
+                        catch(Exception exception)
                         {
                             // ignore parse errors
                         }

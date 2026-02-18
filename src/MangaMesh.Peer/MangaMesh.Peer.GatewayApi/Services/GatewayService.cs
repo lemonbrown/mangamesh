@@ -35,7 +35,9 @@ public class GatewayService
         // 1. Check Cache for Manifest
         var cached = await _cache.GetManifestAsync(contentHash);
 
-        var hashBytes = Encoding.UTF8.GetBytes(contentHash);
+        byte[] hashBytes;
+        try { hashBytes = Convert.FromHexString(contentHash); }
+        catch { hashBytes = Encoding.UTF8.GetBytes(contentHash); }
 
         // 2. DHT Lookup for providers
         var providers = await _dhtNode.FindValueWithAddressAsync(hashBytes);

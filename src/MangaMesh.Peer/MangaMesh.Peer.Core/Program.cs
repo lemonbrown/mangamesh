@@ -2,6 +2,7 @@
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Chapters;
 using MangaMesh.Peer.Core.Configuration;
+using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Data;
 using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Manifests;
@@ -99,8 +100,17 @@ var builder = new HostBuilder()
     // DHT node (singleton)
     // ======================================================
     services.AddSingleton<IBootstrapNodeProvider, YamlBootstrapNodeProvider>();
+
+    // Protocol Handlers
+    services.AddSingleton<ProtocolRouter>();
+    services.AddSingleton<DhtProtocolHandler>();
+    services.AddSingleton<ContentProtocolHandler>();
+    services.AddSingleton<IProtocolHandler>(sp => sp.GetRequiredService<DhtProtocolHandler>());
+    services.AddSingleton<IProtocolHandler>(sp => sp.GetRequiredService<ContentProtocolHandler>());
+
     services.AddSingleton<IDhtNode>(sp =>
     {
+        Console.WriteLine("[Program] Resolving IDhtNode...");
         var identity = sp.GetRequiredService<INodeIdentity>();
         var transport = sp.GetRequiredService<ITransport>();
         var storage = sp.GetRequiredService<IDhtStorage>();
@@ -112,7 +122,25 @@ var builder = new HostBuilder()
         var logger = sp.GetRequiredService<ILogger<DhtNode>>();
         var routingTable = new KBucketRoutingTable(identity.NodeId);
         var requestTracker = new DhtRequestTracker();
-        return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
+
+        // Wire up protocol handlers
+        var router = sp.GetRequiredService<ProtocolRouter>();
+        var dhtHandler = sp.GetRequiredService<DhtProtocolHandler>();
+        var contentHandler = sp.GetRequiredService<ContentProtocolHandler>();
+
+        router.Register(dhtHandler);
+        router.Register(contentHandler);
+
+        transport.OnMessage += router.RouteAsync;
+
+        var node = new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
+
+        // Circular dependency resolution for ContentProtocolHandler -> DhtNode (for request tracking/callbacks)
+        contentHandler.DhtNode = node;
+        dhtHandler.DhtNode = node;
+
+        Console.WriteLine("[Program] IDhtNode resolved.");
+        return node;
     });
 
 
@@ -131,7 +159,9 @@ var builder = new HostBuilder()
 
 Console.WriteLine("Running node...");
 
+Console.WriteLine("Building host...");
 var host = builder.Build();
+Console.WriteLine("Host built.");
 
 using (var scope = host.Services.CreateScope())
 {
@@ -223,6 +253,8 @@ using (var scope = host.Services.CreateScope())
     }
 }
 
+Console.WriteLine("Starting host...");
 await host.RunAsync();
+Console.WriteLine("Host stopped.");
 
 Console.ReadLine();

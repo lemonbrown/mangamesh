@@ -21,6 +21,8 @@ namespace MangaMesh.Peer.Core.Node
         public void AddOrUpdate(RoutingEntry entry)
         {
             if (entry.NodeId == null || entry.NodeId.Length == 0) return;
+            if (entry.NodeId.Length != _localNodeId.Length) return; // skip malformed entries
+            if (entry.NodeId.AsSpan().SequenceEqual(_localNodeId)) return; // skip self
             int index = GetBucketIndex(entry.NodeId);
             _buckets[index].AddOrUpdate(entry);
         }
