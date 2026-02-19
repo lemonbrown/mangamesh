@@ -4,6 +4,24 @@ import { getKeys, requestChallenge, solveChallenge, verifySignature } from '../a
 import { searchMetadata } from '../api/series'; // Changed import
 import type { ImportChapterRequest, KeyPair, AnalyzedChapterDto, SeriesSearchResult } from '../types/api';
 
+const LANGUAGES: Record<string, string> = {
+    en: 'English', ja: 'Japanese', es: 'Spanish', fr: 'French',
+    de: 'German', pt: 'Portuguese', zh: 'Chinese', ko: 'Korean',
+    it: 'Italian', ru: 'Russian', ar: 'Arabic', pl: 'Polish',
+    nl: 'Dutch', tr: 'Turkish', id: 'Indonesian', vi: 'Vietnamese',
+    th: 'Thai', uk: 'Ukrainian', cs: 'Czech', hu: 'Hungarian',
+    ro: 'Romanian', sv: 'Swedish', da: 'Danish', fi: 'Finnish',
+    nb: 'Norwegian', sk: 'Slovak', bg: 'Bulgarian', hr: 'Croatian',
+    ca: 'Catalan', 'pt-br': 'Portuguese (Brazil)', 'es-419': 'Spanish (Latin America)',
+};
+
+const QUALITY_OPTIONS = [
+    { value: 'HQ', label: 'High Quality (HQ)' },
+    { value: 'LQ', label: 'Low Quality (LQ)' },
+    { value: 'Leaks', label: 'Leaks' },
+    { value: 'Unknown', label: 'Unknown' },
+];
+
 export default function ImportChapter() {
     // ... existing ...
 
@@ -14,6 +32,10 @@ export default function ImportChapter() {
     const [isSearchingSeries, setIsSearchingSeries] = useState(false);
 
     const isSelectionUpdate = useRef(false);
+
+    // Language search state
+    const [langSearch, setLangSearch] = useState('');
+    const [showLangDropdown, setShowLangDropdown] = useState(false);
 
     useEffect(() => {
         const timer = setTimeout(async () => {
@@ -49,17 +71,6 @@ export default function ImportChapter() {
         return () => clearTimeout(timer);
     }, [menuTitle]);
 
-    // ... existing ...
-    const [chapterInputValue, setChapterInputValue] = useState('');
-
-    const handleChapterChange = (value: string) => {
-        setChapterInputValue(value);
-        const num = parseFloat(value);
-        if (!isNaN(num)) {
-            setForm({ ...form, chapterNumber: num });
-        }
-    };
-
     const [form, setForm] = useState<ImportChapterRequest>({
         seriesId: '',
         scanlatorId: '',
@@ -69,12 +80,15 @@ export default function ImportChapter() {
         displayName: '',
         releaseType: 'manual',
         source: 0,
-        externalMangaId: ''
+        externalMangaId: '',
+        quality: 'HQ'
     });
     const [submitting, setSubmitting] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [history, setHistory] = useState<import('../types/api').ImportedChapter[]>([]);
     const [search, setSearch] = useState('');
+    const [historyPage, setHistoryPage] = useState(1);
+    const HISTORY_PAGE_SIZE = 20;
 
     // Signature verification state
     const [keys, setKeys] = useState<KeyPair | null>(null);
@@ -180,7 +194,6 @@ export default function ImportChapter() {
                     } else {
                         setMessage({ type: 'success', text: 'Chapter imported successfully' });
                         setForm(prev => ({ ...prev, chapterNumber: prev.chapterNumber + 1 }));
-                        setChapterInputValue((form.chapterNumber + 1).toString());
                     }
                 } catch (e: any) {
                     const msg = e.message || '';
@@ -363,6 +376,8 @@ export default function ImportChapter() {
         item.seriesId.toLowerCase().includes(search.toLowerCase()) ||
         item.displayName.toLowerCase().includes(search.toLowerCase())
     );
+    const historyPageCount = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
+    const pagedHistory = filteredHistory.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
@@ -488,29 +503,59 @@ export default function ImportChapter() {
                                         />
                                     </div>
 
-                                    <div>
+                                    <div className="relative">
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
                                         <input
                                             type="text"
                                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                            value={form.language}
-                                            onChange={e => setForm({ ...form, language: e.target.value })}
+                                            value={langSearch}
+                                            onChange={e => {
+                                                setLangSearch(e.target.value);
+                                                setShowLangDropdown(true);
+                                            }}
+                                            onFocus={() => setShowLangDropdown(true)}
+                                            onBlur={() => setTimeout(() => setShowLangDropdown(false), 150)}
+                                            placeholder="Search language (e.g. English, en)..."
+                                            autoComplete="off"
                                             required
                                         />
+                                        {showLangDropdown && (
+                                            <div className="absolute z-10 w-full bg-white mt-1 rounded-md shadow-lg border border-gray-200 max-h-48 overflow-y-auto">
+                                                {Object.entries(LANGUAGES)
+                                                    .filter(([code, name]) =>
+                                                        name.toLowerCase().includes(langSearch.toLowerCase()) ||
+                                                        code.toLowerCase().startsWith(langSearch.toLowerCase())
+                                                    )
+                                                    .map(([code, name]) => (
+                                                        <div
+                                                            key={code}
+                                                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                            onMouseDown={() => {
+                                                                setLangSearch(name);
+                                                                setForm(prev => ({ ...prev, language: code }));
+                                                                setShowLangDropdown(false);
+                                                            }}
+                                                        >
+                                                            <span className="font-medium">{name}</span>
+                                                            <span className="text-gray-400 ml-2 text-xs">{code}</span>
+                                                        </div>
+                                                    ))
+                                                }
+                                            </div>
+                                        )}
                                     </div>
 
-                                    <div className="relative">
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Chapter Number {batchReviewMode && '(Default / Override)'}</label>
-                                        <input
-                                            type="text"
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
-                                            value={chapterInputValue}
-                                            onChange={e => handleChapterChange(e.target.value)}
-                                            placeholder="Select or type chapter number"
-                                            required={!batchReviewMode}
-                                            disabled={batchReviewMode}
-                                            autoComplete="off"
-                                        />
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Quality</label>
+                                        <select
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            value={form.quality}
+                                            onChange={e => setForm({ ...form, quality: e.target.value })}
+                                        >
+                                            {QUALITY_OPTIONS.map(opt => (
+                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div className="col-span-2">
@@ -618,14 +663,15 @@ export default function ImportChapter() {
                         <div>
                             <h2 className="text-xl font-bold text-gray-900 mb-4">Import History</h2>
                             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                                <div className="p-4 border-b border-gray-200 bg-gray-50">
+                                <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-3">
                                     <input
                                         type="text"
                                         placeholder="Filter imports..."
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
                                         value={search}
-                                        onChange={e => setSearch(e.target.value)}
+                                        onChange={e => { setSearch(e.target.value); setHistoryPage(1); }}
                                     />
+                                    <span className="text-xs text-gray-400 whitespace-nowrap">{filteredHistory.length} result{filteredHistory.length !== 1 ? 's' : ''}</span>
                                 </div>
 
                                 <div className="divide-y divide-gray-200">
@@ -634,7 +680,7 @@ export default function ImportChapter() {
                                             No imports found matching your search.
                                         </div>
                                     ) : (
-                                        filteredHistory.map((item, i) => (
+                                        pagedHistory.map((item, i) => (
                                             <div key={i} className="p-4 hover:bg-gray-50 transition-colors">
                                                 <div className="flex justify-between items-start">
                                                     <div>
@@ -659,6 +705,28 @@ export default function ImportChapter() {
                                         ))
                                     )}
                                 </div>
+
+                                {historyPageCount > 1 && (
+                                    <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+                                        <button
+                                            className="px-3 py-1 text-sm rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                            onClick={() => setHistoryPage(p => p - 1)}
+                                            disabled={historyPage === 1}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="text-sm text-gray-600">
+                                            Page {historyPage} of {historyPageCount}
+                                        </span>
+                                        <button
+                                            className="px-3 py-1 text-sm rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-100 transition-colors"
+                                            onClick={() => setHistoryPage(p => p + 1)}
+                                            disabled={historyPage === historyPageCount}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </>

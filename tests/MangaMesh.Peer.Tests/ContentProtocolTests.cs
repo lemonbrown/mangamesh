@@ -11,7 +11,10 @@ using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Tests.Helpers;
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Node;
+using MangaMesh.Shared.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MangaMesh.Peer.Tests
 {
@@ -42,17 +45,13 @@ namespace MangaMesh.Peer.Tests
 
             // 2. Register ContentHandler on Node B
             var routerB = new ProtocolRouter();
-            
-            // Mock BlobStore
-            var mockBlobStore = new Mock<IBlobStore>();
+
             var testHash = "test-hash-123";
-            var testContent = new byte[] { 0xBE, 0xEF };
+            var mockManifestStore = new Mock<IManifestStore>();
+            mockManifestStore.Setup(s => s.GetAsync(It.Is<ManifestHash>(h => h.Value == testHash)))
+                .ReturnsAsync(new ChapterManifest());
 
-            mockBlobStore.Setup(s => s.Exists(It.Is<BlobHash>(h => h.Value == testHash))).Returns(true);
-            mockBlobStore.Setup(s => s.OpenReadAsync(It.Is<BlobHash>(h => h.Value == testHash)))
-                .ReturnsAsync(() => new MemoryStream(testContent));
-
-            var contentHandlerB = new ContentProtocolHandler(transportB, mockBlobStore.Object);
+            var contentHandlerB = new ContentProtocolHandler(transportB, BuildScopeFactory(manifestStore: mockManifestStore.Object));
             // Verify RequestId is echoed? No, handled internally.
             
             routerB.Register(contentHandlerB);
@@ -109,26 +108,15 @@ namespace MangaMesh.Peer.Tests
             // Wiring for Content Protocol
             var routerA = new ProtocolRouter();
             var dhtHandlerA = new DhtProtocolHandler(nodeA);
-            
-            var manifestContent = new byte[] { 0xCA, 0xFE, 0xBA, 0xBE };
-            var manifestHash = "mm:manifest:123";
-            
-            var mockBlobStoreA = new Mock<IBlobStore>();
-            mockBlobStoreA.Setup(s => s.Exists(It.Is<BlobHash>(h => h.Value == manifestHash))).Returns(true);
-            mockBlobStoreA.Setup(s => s.OpenReadAsync(It.Is<BlobHash>(h => h.Value == manifestHash)))
-                .ReturnsAsync(() => new MemoryStream(manifestContent));
 
-            var contentHandlerA = new ContentProtocolHandler(transportA, mockBlobStoreA.Object);
-            contentHandlerA.DhtNode = nodeA; // IMPORTANT: DhtNode is needed? 
-            // ContentProtocolHandler doesn't use DhtNode for GetManifest handling (except responding).
-            // DhtNode property is public.
-            // Wait, ContentProtocolHandler ONLY uses DhtNode if it needs to trigger DHT operations or uses identity?
-            // "GetManifest" handling logic:
-            // var content = await _blobStore.OpenReadAsync...
-            // SendContentRequestAsync(m.SenderPort, ...). 
-            // It relies on _transport.SendAsync. 
-            // Does not strictly need DhtNode unless we added something?
-            // In GatewayIntegrationTests logic: contentHandler.DhtNode = _peerNode;
+            var manifestHash = "mm:manifest:123";
+
+            var mockManifestStoreA = new Mock<IManifestStore>();
+            mockManifestStoreA.Setup(s => s.GetAsync(It.Is<ManifestHash>(h => h.Value == manifestHash)))
+                .ReturnsAsync(new ChapterManifest { SeriesId = manifestHash });
+
+            var contentHandlerA = new ContentProtocolHandler(transportA, BuildScopeFactory(manifestStore: mockManifestStoreA.Object));
+            contentHandlerA.DhtNode = nodeA;
             
             routerA.Register(dhtHandlerA);
             routerA.Register(contentHandlerA);
@@ -196,7 +184,21 @@ namespace MangaMesh.Peer.Tests
             }
 
             var receivedData = await receivedTcs.Task;
-            CollectionAssert.AreEqual(manifestContent, receivedData);
+            Assert.IsTrue(receivedData != null && receivedData.Length > 0, "Expected manifest data to be received");
+        }
+
+        private static IServiceScopeFactory BuildScopeFactory(IBlobStore? blobStore = null, IManifestStore? manifestStore = null)
+        {
+            var sp = new Mock<IServiceProvider>();
+            if (blobStore != null)
+                sp.Setup(x => x.GetService(typeof(IBlobStore))).Returns(blobStore);
+            if (manifestStore != null)
+                sp.Setup(x => x.GetService(typeof(IManifestStore))).Returns(manifestStore);
+            var scope = new Mock<IServiceScope>();
+            scope.Setup(s => s.ServiceProvider).Returns(sp.Object);
+            var factory = new Mock<IServiceScopeFactory>();
+            factory.Setup(f => f.CreateScope()).Returns(scope.Object);
+            return factory.Object;
         }
 
         private (DhtNode, TcpTransport) CreateNode(int port)

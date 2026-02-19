@@ -21,6 +21,7 @@ namespace MangaMesh.Shared.Models
             = Array.Empty<ChapterFileEntry>();
         public long TotalSize { get; init; }
         public string HashAlgorithm { get; init; } = "sha256";
+        public string Quality { get; init; } = "Unknown";
         public string SignedBy { get; set; } = default!;
         public string PublicKey { get; set; } = default!;
         public string Signature { get; set; } = default!;

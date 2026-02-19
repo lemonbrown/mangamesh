@@ -56,6 +56,7 @@ namespace MangaMesh.Peer.Tests
                 sourceReaders,
                 formatProvider,
                 new ManifestSigningService(),
+                new Mock<IDhtNode>().Object,
                 NullLogger<ImportChapterService>.Instance);
 
             _tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -97,7 +98,7 @@ namespace MangaMesh.Peer.Tests
                 .ReturnsAsync((Stream s, string m) =>
                 {
                     var pm = new PageManifest { FileSize = s.Length };
-                    var hash = "hash-" + Guid.NewGuid();
+                    var hash = Convert.ToHexString(Guid.NewGuid().ToByteArray() /* 16 bytes = 32 hex chars */);
                     return (pm, hash);
                 });
 

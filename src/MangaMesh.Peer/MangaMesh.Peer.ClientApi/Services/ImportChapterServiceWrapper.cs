@@ -33,7 +33,8 @@ namespace MangaMesh.Peer.ClientApi.Services
                 },
                 DisplayName = request.DisplayName,
                 Source = request.Source,
-                ExternalMangaId = request.ExternalMangaId
+                ExternalMangaId = request.ExternalMangaId,
+                Quality = request.Quality
             }, ct);
 
             return new ImportResultDto(

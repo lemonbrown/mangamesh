@@ -45,6 +45,24 @@ namespace MangaMesh.Peer.Core.Manifests
                 .ToListAsync();
         }
 
+        public async Task<IReadOnlyList<(ManifestHash Hash, ChapterManifest Manifest)>> GetAllWithDataAsync()
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ClientDbContext>();
+            var entities = await context.Manifests
+                .OrderByDescending(m => m.CreatedUtc)
+                .ToListAsync();
+
+            var result = new List<(ManifestHash, ChapterManifest)>(entities.Count);
+            foreach (var entity in entities)
+            {
+                var manifest = Deserialize(entity.DataJson);
+                if (manifest != null)
+                    result.Add((new ManifestHash(entity.Hash), manifest));
+            }
+            return result;
+        }
+
         public async Task<ChapterManifest?> GetAsync(ManifestHash hash)
         {
             using var scope = _scopeFactory.CreateScope();

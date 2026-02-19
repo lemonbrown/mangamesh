@@ -4,6 +4,13 @@ import { getSeriesChapters, getSeriesDetails, getChapterDetails } from '../api/s
 // import { getSubscriptions, subscribe, unsubscribe } from '../api/subscriptions'; // Not porting subscriptions yet? Or maybe stub it.
 import type { ChapterSummaryResponse, SeriesDetailsResponse, ChapterManifest } from '../types/api';
 
+const LANG_COUNTRY: Record<string, string> = {
+    en: 'gb', ja: 'jp', es: 'es', fr: 'fr', de: 'de',
+    pt: 'pt', zh: 'cn', ko: 'kr', it: 'it', ru: 'ru',
+    ar: 'sa', pl: 'pl', nl: 'nl', tr: 'tr', id: 'id',
+    vi: 'vn', th: 'th', uk: 'ua', cs: 'cz', hu: 'hu',
+};
+
 export default function SeriesDetails() {
     const { seriesId } = useParams<{ seriesId: string }>();
     const [chapters, setChapters] = useState<ChapterSummaryResponse[]>([]);
@@ -12,6 +19,7 @@ export default function SeriesDetails() {
     const [loading, setLoading] = useState(true);
     const [manifestsLoading, setManifestsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [chapterSearch, setChapterSearch] = useState('');
 
     useEffect(() => {
         async function load() {
@@ -140,7 +148,23 @@ export default function SeriesDetails() {
             </div>
 
             <div className="space-y-4">
-                <h2 className="text-xl font-bold text-gray-900 px-1">Chapters</h2>
+                <div className="flex items-center gap-4 px-1">
+                    <h2 className="text-xl font-bold text-gray-900">Chapters</h2>
+                    <div className="relative flex-1 max-w-xs">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <input
+                            type="text"
+                            className="block w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all shadow-sm"
+                            placeholder="Search chapters..."
+                            value={chapterSearch}
+                            onChange={(e) => setChapterSearch(e.target.value)}
+                        />
+                    </div>
+                </div>
 
                 {chapters.length === 0 ? (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center text-gray-500">
@@ -148,7 +172,14 @@ export default function SeriesDetails() {
                     </div>
                 ) : (
                     <div className="grid gap-4">
-                        {chapters.map((chapter) => {
+                        {chapters.filter((chapter) => {
+                            if (!chapterSearch) return true;
+                            const q = chapterSearch.toLowerCase();
+                            return (
+                                chapter.chapterNumber.toString().includes(q) ||
+                                chapter.title?.toLowerCase().includes(q)
+                            );
+                        }).map((chapter) => {
                             const manifests = chapterManifests[chapter.chapterId] || [];
 
                             return (
@@ -196,7 +227,10 @@ export default function SeriesDetails() {
 
                                                         <div className="flex-1 min-w-0 pl-2">
                                                             <div className="flex items-center flex-wrap gap-2">
-                                                                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                                                                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                                                    {LANG_COUNTRY[mLang?.toLowerCase()] && (
+                                                                        <span className={`fi fi-${LANG_COUNTRY[mLang.toLowerCase()]} text-sm`}></span>
+                                                                    )}
                                                                     {mLang}
                                                                 </span>
                                                                 <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider">
@@ -220,9 +254,6 @@ export default function SeriesDetails() {
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-4 ml-4">
-                                                            <span className="text-gray-300 text-[10px] font-mono opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                {mHash?.substring(0, 8)}
-                                                            </span>
                                                             <div className="h-8 w-8 rounded-full bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
                                                                 <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

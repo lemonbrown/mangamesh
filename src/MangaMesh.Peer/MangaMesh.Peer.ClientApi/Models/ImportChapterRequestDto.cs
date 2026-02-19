@@ -9,7 +9,8 @@
         string DisplayName,
         string ReleaseType,
         Shared.Models.ExternalMetadataSource Source,
-        string ExternalMangaId
+        string ExternalMangaId,
+        string Quality = "Unknown"
     );
 
 }

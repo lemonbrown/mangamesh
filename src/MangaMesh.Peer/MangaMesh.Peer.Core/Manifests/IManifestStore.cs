@@ -17,6 +17,7 @@ namespace MangaMesh.Peer.Core.Manifests
         Task<(string SetHash, int Count)> GetSetHashAsync();
         Task<bool> ExistsAsync(ManifestHash manifestHash);
         Task<IEnumerable<ManifestHash>> GetAllHashesAsync();
+        Task<IReadOnlyList<(ManifestHash Hash, ChapterManifest Manifest)>> GetAllWithDataAsync();
         Task DeleteAsync(ManifestHash hash);
     }
 }

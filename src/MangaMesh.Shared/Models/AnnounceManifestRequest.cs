@@ -24,4 +24,5 @@ public sealed record AnnounceManifestRequest
     public string PublicKey { get; init; } = "";
     public string SignedBy { get; init; } = "";
     public ReleaseType ReleaseType { get; set; }
+    public string Quality { get; init; } = "Unknown";
 }

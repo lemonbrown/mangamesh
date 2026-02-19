@@ -6,7 +6,7 @@ services:
   # --------------------
   # Acts as a stable entry point for the DHT.
   # Reusing Gateway image but configured as a simple node.
-  mangamesh.peer.core:
+  bootstrap:
     build:
       context: .
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.Core/Dockerfile
@@ -14,13 +14,15 @@ services:
       - DOTNET_ENVIRONMENT=Development
       - Dht__Port=4200
       - Dht__Bootstrap=false
-      - TrackerUrl=http://mangamesh.index.api:7030
+      - TrackerUrl=http://index.api:7030
       # Bootstrap Node Identity
       - Node__PublicKey=AwimzB+Lesq9GMNs27W2FGC2+aNK0O/ymZHPr9fRyiE=
       - Node__PrivateKey=t66/FG6HweFbkvJI15/iTq37MnqWj+YCEQf+ATZcRQ0=
     ports:
       - "4200:4200" # DHT Port
       # No API port mapping needed for bootstrap unless debugging
+    depends_on:
+      - index.api
     networks:
       - mangamesh-net
 
@@ -28,7 +30,7 @@ services:
   # 2. Gateway Node
   # --------------------
   # The Gateway for the Index/Websites to query.
-  mangamesh.peer.gatewayapi:
+  gateway:
     build:
       context: .
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.GatewayApi/Dockerfile
@@ -36,10 +38,12 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5170
       - Gateway__Port=4201 # Different internal DHT port
-      - Gateway__BootstrapNodes=mangamesh.peer.core:4200
+      - Gateway__BootstrapNodes=bootstrap:4200
       - Gateway__Enabled=true
-      - Gateway__TrackerUrl=http://mangamesh.index.api:7030
+      - Gateway__TrackerUrl=http://index.api:7030
       - Gateway__PublicBaseUrl=http://localhost:5173/gateway
+      - Gateway__Mode=PeerRedirect
+      - Gateway__PeerClientApiPort=8080
       - GatewayCache__MaxCacheSizeMb=500
       # Gateway Node Identity
       - Node__PublicKey=SCwPpOukKLuCdL+D2ut99JPG6vr7MKBEJFYfhTQVxqo=
@@ -48,7 +52,7 @@ services:
       - "5170:5170" # Gateway API Port
       - "4201:4201" # DHT Port
     depends_on:
-      - mangamesh.peer.core
+      - bootstrap
     networks:
       - mangamesh-net
     volumes:
@@ -58,25 +62,25 @@ services:
   # 3. Peer API
   # --------------------
   # API only
-  mangamesh.peer.clientapi:
+  peer:
     build:
       context: .
       dockerfile: MangaMesh.Peer/MangaMesh.Peer.ClientApi/Dockerfile
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:80
-      - TrackerUrl=http://mangamesh.index.api:7030 # Connects to Index Tracker
+      - TrackerUrl=http://index.api:7030 # Connects to Index Tracker
       - Dht__Port=3000
       - Dht__Bootstrap=true # Connects to bootstrap nodes
-      - Dht__BootstrapNodes=mangamesh.peer.core:4200
+      - Dht__BootstrapNodes=bootstrap:4200
       # Peer Node Identity
       - Node__PublicKey=1iDmJN2Wt0wIeE9XG+MY5VLO/SRBWjjrFE9LWHKuVJ4=
       - Node__PrivateKey=MTF5HdljRJwUi6BhacpexnvJ/gMtcC+qs5bijv9I0MY=
     ports:
-      # API port not exposed to host directly, accessed via UI proxy or internal network
+      - "8080:80"   # HTTP API Port (accessible from host for PeerRedirect mode)
       - "3000:3000" # DHT Port
     depends_on:
-      - mangamesh.peer.core
+      - bootstrap
     networks:
       - mangamesh-net
     volumes:
@@ -87,21 +91,21 @@ services:
   # 4. Peer UI
   # --------------------
   # React UI serving via Nginx
-  mangamesh.peer.ui:
+  peer.ui:
     build:
       context: MangaMesh.Peer/mangamesh-peer-ui
       dockerfile: Dockerfile
     ports:
       - "7124:80" # Maps container port 80 to host 7124 (Access UI here)
     depends_on:
-      - mangamesh.peer.clientapi
+      - peer
     networks:
       - mangamesh-net
 
   # --------------------
   # 4. Index API
   # --------------------
-  mangamesh.index.api:
+  index.api:
     build:
       context: .
       dockerfile: MangaMesh.Index/MangaMesh.Index.Api/Dockerfile
@@ -118,18 +122,18 @@ services:
   # --------------------
   # 5. Index Admin API
   # --------------------
-  mangamesh.index.adminapi:
+  index.adminapi:
     build:
       context: .
       dockerfile: MangaMesh.Index/MangaMesh.Index.AdminApi/Dockerfile
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:7078
-      - Tracker__Url=http://mangamesh.index.api:7030
+      - Tracker__Url=http://index.api:7030
     ports:
       - "7078:7078"
     depends_on:
-      - mangamesh.index.api # Ideally shares DB
+      - index.api # Ideally shares DB
     networks:
       - mangamesh-net
     volumes:
@@ -148,8 +152,8 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - mangamesh.index.api
-      - mangamesh.peer.gatewayapi
+      - index.api
+      - gateway
     networks:
       - mangamesh-net
 

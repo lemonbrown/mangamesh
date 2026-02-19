@@ -98,7 +98,7 @@ namespace MangaMesh.IntegrationTests
             var mockChunkIngester = new Mock<IChunkIngester>();
             // Return valid tuple with PageManifest and Hash
             mockChunkIngester.Setup(i => i.IngestAsync(It.IsAny<Stream>(), It.IsAny<string>()))
-                .ReturnsAsync((new PageManifest { FileSize = 100 }, "dummy-page-hash"));
+                .ReturnsAsync((new PageManifest { FileSize = 100 }, Convert.ToHexString(new byte[16])));
             _chunkIngester = mockChunkIngester.Object;
 
             // 2. Setup TrackerClient pointing to Index
@@ -149,6 +149,7 @@ namespace MangaMesh.IntegrationTests
                 sourceReaders,
                 formatProvider,
                 new ManifestSigningService(),
+                new Mock<IDhtNode>().Object,
                 NullLogger<ImportChapterService>.Instance
             );
         }

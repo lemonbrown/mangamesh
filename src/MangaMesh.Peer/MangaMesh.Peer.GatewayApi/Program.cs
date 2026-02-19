@@ -115,11 +115,6 @@ builder.Services.AddSingleton<INodeConnectionInfoProvider, ServerNodeConnectionI
 // The Gateway Service itself
 builder.Services.AddSingleton<GatewayService>();
 
-// Dummy content provider for ContentProtocolHandler (Gateway doesn't really serve content yet, just requests it)
-// But to satisfy the constructor:
-builder.Services.AddSingleton<Func<string, byte[]?>>(sp => (hash) => null);
-
-
 // Ensure data directory exists
 var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
 if (!Directory.Exists(dataDir))

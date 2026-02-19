@@ -13,7 +13,9 @@ using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Data;
+using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Node;
+using MangaMesh.Shared.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using MangaMesh.Peer.Core.Tracker;
 using GatewayApi::MangaMesh.Peer.GatewayApi.Config;
@@ -35,6 +37,7 @@ namespace MangaMesh.IntegrationTests
         private int _peerPort;
 
         private Mock<IBlobStore> _mockBlobStore = null!;
+        private Mock<IManifestStore> _mockManifestStore = null!;
 
         [TestInitialize]
         public async Task Setup()
@@ -125,11 +128,11 @@ namespace MangaMesh.IntegrationTests
 
             // Content Handler for Peer
             _mockBlobStore = new Mock<IBlobStore>();
-            _mockBlobStore.Setup(s => s.Exists(It.Is<BlobHash>(h => h.Value == "test-hash"))).Returns(true);
-            _mockBlobStore.Setup(s => s.OpenReadAsync(It.Is<BlobHash>(h => h.Value == "test-hash")))
-                .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("{\"title\":\"Test Series\"}")));
+            _mockManifestStore = new Mock<IManifestStore>();
+            _mockManifestStore.Setup(s => s.GetAsync(It.Is<ManifestHash>(h => h.Value == "test-hash")))
+                .ReturnsAsync(new ChapterManifest { SeriesId = "Test Series" });
 
-            var contentHandler = new ContentProtocolHandler(_peerTransport, _mockBlobStore.Object);
+            var contentHandler = new ContentProtocolHandler(_peerTransport, BuildScopeFactory(_mockBlobStore.Object, _mockManifestStore.Object));
             contentHandler.DhtNode = _peerNode;
             router.Register(contentHandler);
 
@@ -334,7 +337,7 @@ namespace MangaMesh.IntegrationTests
 
             // 4. Request via Gateway API
             // content/file/{pageHash}
-            var response = await _client.GetAsync($"/content/file/{pageHash}");
+            var response = await _client.GetAsync($"/api/file/{pageHash}");
 
             if (response.StatusCode != HttpStatusCode.OK)
             {
@@ -353,6 +356,20 @@ namespace MangaMesh.IntegrationTests
                 if (fileContent[i] != responseData[i])
                     Assert.Fail($"Content mismatch at index {i}");
             }
+        }
+
+        private static IServiceScopeFactory BuildScopeFactory(IBlobStore? blobStore = null, IManifestStore? manifestStore = null)
+        {
+            var sp = new Mock<IServiceProvider>();
+            if (blobStore != null)
+                sp.Setup(x => x.GetService(typeof(IBlobStore))).Returns(blobStore);
+            if (manifestStore != null)
+                sp.Setup(x => x.GetService(typeof(IManifestStore))).Returns(manifestStore);
+            var scope = new Mock<IServiceScope>();
+            scope.Setup(s => s.ServiceProvider).Returns(sp.Object);
+            var factory = new Mock<IServiceScopeFactory>();
+            factory.Setup(f => f.CreateScope()).Returns(scope.Object);
+            return factory.Object;
         }
 
         private static int GetFreePort()

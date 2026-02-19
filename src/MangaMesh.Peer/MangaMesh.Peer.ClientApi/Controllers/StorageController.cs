@@ -26,35 +26,43 @@ namespace MangaMesh.Peer.ClientApi.Controllers
         }
 
         [HttpGet("manifests")]
-        public async Task<ActionResult<IEnumerable<StoredManifestDto>>> GetManifests([FromServices] IManifestStore manifestStore)
+        public async Task<ActionResult> GetManifests(
+            [FromServices] IManifestStore manifestStore,
+            [FromQuery] string? q = null,
+            [FromQuery] int offset = 0,
+            [FromQuery] int limit = 20)
         {
-            // Note: Loading all manifests might be heavy if there are thousands.
-            // Pagination should be considered for scaling, but for now this suffices.
-            var hashes = await manifestStore.GetAllHashesAsync();
-            var result = new List<StoredManifestDto>();
+            var all = await manifestStore.GetAllWithDataAsync();
 
-            foreach (var hash in hashes)
+            IEnumerable<(ManifestHash Hash, ChapterManifest Manifest)> filtered = all;
+            if (!string.IsNullOrWhiteSpace(q))
             {
-                var manifest = await manifestStore.GetAsync(hash);
-                if (manifest != null)
-                {
-                    result.Add(new StoredManifestDto(
-                        hash.Value,
-                        manifest.SeriesId,
-                        manifest.ChapterNumber.ToString(), // Simple conversion
-                        manifest.Volume,
-                        manifest.Language,
-                        manifest.ScanGroup,
-                        manifest.Title,
-                        manifest.TotalSize,
-                        manifest.Files?.Count ?? 0,
-                        manifest.CreatedUtc
-                    ));
-                }
+                filtered = all.Where(x =>
+                    (x.Manifest.Title?.Contains(q, StringComparison.OrdinalIgnoreCase) == true) ||
+                    (x.Manifest.SeriesId?.Contains(q, StringComparison.OrdinalIgnoreCase) == true) ||
+                    (x.Manifest.Language?.Contains(q, StringComparison.OrdinalIgnoreCase) == true) ||
+                    (x.Manifest.ScanGroup?.Contains(q, StringComparison.OrdinalIgnoreCase) == true));
             }
 
-            // Sort by CreatedUtc desc
-            return Ok(result.OrderByDescending(m => m.CreatedUtc));
+            var filteredList = filtered.ToList();
+            var total = filteredList.Count;
+            var items = filteredList
+                .Skip(offset)
+                .Take(limit)
+                .Select(x => new StoredManifestDto(
+                    x.Hash.Value,
+                    x.Manifest.SeriesId,
+                    x.Manifest.ChapterNumber.ToString(),
+                    x.Manifest.Volume,
+                    x.Manifest.Language,
+                    x.Manifest.ScanGroup,
+                    x.Manifest.Title,
+                    x.Manifest.TotalSize,
+                    x.Manifest.Files?.Count ?? 0,
+                    x.Manifest.CreatedUtc))
+                .ToList();
+
+            return Ok(new { items, total, offset, limit });
         }
 
         [HttpDelete("manifests/{hash}")]

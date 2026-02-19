@@ -34,6 +34,19 @@ namespace MangaMesh.Peer.Core.Manifests
             return Task.FromResult<IEnumerable<ManifestHash>>(hashes);
         }
 
+        public async Task<IReadOnlyList<(ManifestHash Hash, ChapterManifest Manifest)>> GetAllWithDataAsync()
+        {
+            var hashes = await GetAllHashesAsync();
+            var result = new List<(ManifestHash, ChapterManifest)>();
+            foreach (var hash in hashes)
+            {
+                var manifest = await GetAsync(hash);
+                if (manifest != null)
+                    result.Add((hash, manifest));
+            }
+            return result.OrderByDescending(x => x.Item2.CreatedUtc).ToList();
+        }
+
         public async Task SaveAsync(ManifestHash hash, ChapterManifest manifest)
         {
             var path = GetPath(hash);

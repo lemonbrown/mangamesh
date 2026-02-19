@@ -115,6 +115,7 @@ namespace MangaMesh.Peer.Core.Chapters
                 TotalSize = totalSize,
                 PublicKey = keyPair.PublicKeyBase64,
                 SignedBy = "self",
+                Quality = request.Quality,
                 Files = entries
             };
 
@@ -143,6 +144,7 @@ namespace MangaMesh.Peer.Core.Chapters
                 ChapterNumber = chapterManifest.ChapterNumber,
                 Language = chapterManifest.Language,
                 ReleaseType = request.ReleaseType,
+                Quality = request.Quality,
                 Source = request.Source,
                 ExternalMangaId = request.ExternalMangaId,
                 ChapterId = chapterManifest.ChapterId,

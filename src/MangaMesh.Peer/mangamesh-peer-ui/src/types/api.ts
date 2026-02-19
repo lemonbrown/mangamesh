@@ -28,6 +28,7 @@ export interface ImportChapterRequest {
     releaseType: string;
     source: number; // 0=MangaDex, 1=AniList, 2=MAL
     externalMangaId: string;
+    quality: string;
 }
 
 export interface StorageStats {
@@ -195,4 +196,11 @@ export interface StoredManifest {
     sizeBytes: number;
     fileCount: number;
     createdUtc: string;
+}
+
+export interface PagedResult<T> {
+    items: T[];
+    total: number;
+    offset: number;
+    limit: number;
 }

@@ -97,14 +97,8 @@ export default function Series() {
                         {series.title}
                     </h3>
 
-                    <div className="mt-auto flex items-center justify-between text-xs text-gray-500">
-                        <div className="flex items-center gap-1">
-                            <span className="font-medium text-green-600">{series.seedCount ?? 0}</span>
-                            <span>seeds</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <span>{series.chapterCount ?? 0} ch</span>
-                        </div>
+                    <div className="mt-auto flex items-center justify-end text-xs text-gray-500">
+                        <span>{series.chapterCount ?? 0} ch</span>
                     </div>
                 </div>
             </Link>

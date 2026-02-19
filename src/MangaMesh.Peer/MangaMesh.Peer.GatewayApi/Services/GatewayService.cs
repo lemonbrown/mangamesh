@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Node;
+using MangaMesh.Peer.GatewayApi.Config;
 
 namespace MangaMesh.Peer.GatewayApi.Services;
 
@@ -14,12 +15,14 @@ public class GatewayService
     private readonly IDhtNode _dhtNode;
     private readonly IGatewayCache _cache;
     private readonly ILogger<GatewayService> _logger;
+    private readonly GatewayConfig _config;
 
-    public GatewayService(IDhtNode dhtNode, IGatewayCache cache, ILogger<GatewayService> logger)
+    public GatewayService(IDhtNode dhtNode, IGatewayCache cache, ILogger<GatewayService> logger, GatewayConfig config)
     {
         _dhtNode = dhtNode;
         _cache = cache;
         _logger = logger;
+        _config = config;
     }
 
     public async Task<ManifestData?> GetManifestAsync(string contentHash)
@@ -145,6 +148,21 @@ public class GatewayService
         }
 
         return null;
+    }
+
+    public async Task<List<string>> FindPeerUrlsAsync(string contentHash, string apiRelativePath)
+    {
+        byte[] hashBytes;
+        try { hashBytes = Convert.FromHexString(contentHash); }
+        catch { hashBytes = Encoding.UTF8.GetBytes(contentHash); }
+
+        var providers = await _dhtNode.FindValueWithAddressAsync(hashBytes);
+        _logger.LogInformation($"[Gateway:Redirect] Found {providers.Count} providers for hash {contentHash}");
+
+        return providers
+            .Select(p => $"http://{p.Address.Host}:{_config.PeerClientApiPort}/{apiRelativePath}")
+            .Distinct()
+            .ToList();
     }
 
     public async Task<(byte[]? Data, string? MimeType)> GetReassembledFileAsync(string pageHash)

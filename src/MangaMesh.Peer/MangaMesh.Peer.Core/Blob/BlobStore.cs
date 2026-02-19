@@ -67,6 +67,19 @@ namespace MangaMesh.Peer.Core.Blob
         public bool Exists(BlobHash hash)
             => File.Exists(GetPath(hash));
 
+        public IEnumerable<BlobHash> GetAllHashes()
+        {
+            if (!Directory.Exists(_root))
+                yield break;
+
+            foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+            {
+                var name = Path.GetFileName(file);
+                if (name.Length == 64 && !name.EndsWith(".tmp"))
+                    yield return new BlobHash(name);
+            }
+        }
+
         private string GetPath(BlobHash hash)
         {
             var a = hash.Value[..2];

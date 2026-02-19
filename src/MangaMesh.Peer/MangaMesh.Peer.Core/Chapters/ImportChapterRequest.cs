@@ -54,6 +54,7 @@ namespace MangaMesh.Peer.Core.Chapters
 
         public ExternalMetadataSource Source { get; set; }
         public string ExternalMangaId { get; set; } = string.Empty;
+        public string Quality { get; set; } = "Unknown";
     }
 
 }
