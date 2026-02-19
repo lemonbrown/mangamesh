@@ -44,8 +44,8 @@ builder.Services.Configure<MangaMesh.Index.AdminApi.Configuration.TrackerSetting
 builder.Services.AddHttpClient<ITrackerService, MangaMesh.Index.AdminApi.Services.HttpTrackerService>();
 
 // builder.Services.AddSingleton<INodeRegistry, NodeRegistry>(); // Removed as we use TrackerService now
-builder.Services.AddSingleton<IManifestEntryStore, JsonManifestEntryStore>();
-builder.Services.AddSingleton<ISeriesRegistry, JsonSeriesRegistry>();
+builder.Services.AddScoped<IManifestEntryStore, SqliteManifestEntryStore>();
+builder.Services.AddScoped<ISeriesRegistry, SqliteSeriesRegistry>();
 builder.Services.AddScoped<ISeriesStore, ManifestDerivedSeriesStore>();
 builder.Services.AddScoped<IPublicKeyRegistry, PublicKeyRegistry>();
 builder.Services.AddScoped<IPublicKeyStore, SqlitePublicKeyStore>();
@@ -83,6 +83,38 @@ using (var scope = app.Services.CreateScope())
     var services = scope.ServiceProvider;
     var context = services.GetRequiredService<IndexDbContext>();
     context.Database.EnsureCreated();
+
+    // Schema Patch - ensure new tables exist (Index API handles data migration)
+    if (context.Database.IsRelational())
+    {
+        context.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS ""ManifestEntries"" (
+            ""ManifestHash"" TEXT NOT NULL CONSTRAINT ""PK_ManifestEntries"" PRIMARY KEY,
+            ""SeriesId"" TEXT NOT NULL,
+            ""ChapterId"" TEXT NOT NULL,
+            ""ChapterNumber"" REAL NOT NULL,
+            ""Volume"" TEXT,
+            ""Language"" TEXT NOT NULL,
+            ""ScanGroup"" TEXT,
+            ""Quality"" TEXT,
+            ""AnnouncedUtc"" TEXT NOT NULL,
+            ""LastSeenUtc"" TEXT NOT NULL,
+            ""Title"" TEXT NOT NULL,
+            ""ExternalMetadataSource"" TEXT NOT NULL,
+            ""ExteralMetadataMangaId"" TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ""IX_ManifestEntries_SeriesId"" ON ""ManifestEntries"" (""SeriesId"");
+        CREATE INDEX IF NOT EXISTS ""IX_ManifestEntries_ChapterId"" ON ""ManifestEntries"" (""ChapterId"");
+        CREATE TABLE IF NOT EXISTS ""SeriesDefinitions"" (
+            ""SeriesId"" TEXT NOT NULL CONSTRAINT ""PK_SeriesDefinitions"" PRIMARY KEY,
+            ""Source"" INTEGER NOT NULL,
+            ""ExternalMangaId"" TEXT NOT NULL,
+            ""Title"" TEXT NOT NULL,
+            ""CreatedUtc"" TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ""IX_SeriesDefinitions_Source_ExternalMangaId"" ON ""SeriesDefinitions"" (""Source"", ""ExternalMangaId"");
+    ");
+    }
 }
 
 app.Run();
