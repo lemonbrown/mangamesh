@@ -419,3 +419,5 @@ FodyWeavers.xsd
 /data
 /output
 /src/MangaMesh.SeriesScraper/MangaMesh.SeriesScraper.Cli/data
+/src/MangaMesh.SeriesScraper/MangaMesh.SeriesScraper.Cli/output
+/src/MangaMesh.Index/MangaMesh.Index.Api/wwwroot/covers
