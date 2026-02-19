@@ -138,6 +138,8 @@ namespace MangaMesh.IntegrationTests
                 new ZipSourceReader(formatProvider)
             };
 
+            var mockDhtNode = new Mock<IDhtNode>();
+
             _importService = new ImportChapterService(
                 _mockBlobStore.Object,
                 _mockManifestStore.Object,
@@ -149,6 +151,7 @@ namespace MangaMesh.IntegrationTests
                 sourceReaders,
                 formatProvider,
                 new ManifestSigningService(),
+                mockDhtNode.Object,
                 NullLogger<ImportChapterService>.Instance
             );
         }

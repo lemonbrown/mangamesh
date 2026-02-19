@@ -31,7 +31,7 @@ public class DhtBootstrapTests
         var (node, transport) = TestNodeFactory.CreateNode(port);
 
         var router  = new ProtocolRouter();
-        var handler = new DhtProtocolHandler(node);
+        var handler = new DhtProtocolHandler { DhtNode = node };
         router.Register(handler);
         transport.OnMessage += router.RouteAsync;
 

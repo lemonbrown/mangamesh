@@ -45,6 +45,8 @@ namespace MangaMesh.Peer.Tests
                 new ZipSourceReader(formatProvider)
             };
 
+            var mockDhtNode = new Mock<IDhtNode>();
+
             _service = new ImportChapterService(
                 _mockBlobStore.Object,
                 _mockManifestStore.Object,
@@ -56,6 +58,7 @@ namespace MangaMesh.Peer.Tests
                 sourceReaders,
                 formatProvider,
                 new ManifestSigningService(),
+                mockDhtNode.Object,
                 NullLogger<ImportChapterService>.Instance);
 
             _tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());

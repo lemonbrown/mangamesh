@@ -16,6 +16,7 @@ using MangaMesh.Peer.Core.Data;
 using MangaMesh.Peer.Core.Node;
 using Microsoft.Extensions.Logging.Abstractions;
 using MangaMesh.Peer.Core.Tracker;
+using MangaMesh.Peer.Core.Manifests;
 using GatewayApi::MangaMesh.Peer.GatewayApi.Config;
 
 namespace MangaMesh.IntegrationTests
@@ -120,7 +121,7 @@ namespace MangaMesh.IntegrationTests
 
             // Wire up protocol handlers for Peer Node
             var router = new ProtocolRouter();
-            var dhtHandler = new DhtProtocolHandler(_peerNode);
+            var dhtHandler = new DhtProtocolHandler { DhtNode = _peerNode };
             router.Register(dhtHandler);
 
             // Content Handler for Peer
@@ -129,7 +130,8 @@ namespace MangaMesh.IntegrationTests
             _mockBlobStore.Setup(s => s.OpenReadAsync(It.Is<BlobHash>(h => h.Value == "test-hash")))
                 .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("{\"title\":\"Test Series\"}")));
 
-            var contentHandler = new ContentProtocolHandler(_peerTransport, _mockBlobStore.Object);
+            var scopeFactory = CreateScopeFactory(_mockBlobStore.Object);
+            var contentHandler = new ContentProtocolHandler(_peerTransport, scopeFactory);
             contentHandler.DhtNode = _peerNode;
             router.Register(contentHandler);
 
@@ -353,6 +355,15 @@ namespace MangaMesh.IntegrationTests
                 if (fileContent[i] != responseData[i])
                     Assert.Fail($"Content mismatch at index {i}");
             }
+        }
+
+        private static IServiceScopeFactory CreateScopeFactory(IBlobStore blobStore, IManifestStore? manifestStore = null)
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton(blobStore);
+            services.AddSingleton(manifestStore ?? new Mock<IManifestStore>().Object);
+            var provider = services.BuildServiceProvider();
+            return provider.GetRequiredService<IServiceScopeFactory>();
         }
 
         private static int GetFreePort()

@@ -11,7 +11,9 @@ using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Tests.Helpers;
 using MangaMesh.Peer.Core.Blob;
 using MangaMesh.Peer.Core.Content;
+using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Node;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MangaMesh.Peer.Tests
 {
@@ -52,8 +54,8 @@ namespace MangaMesh.Peer.Tests
             mockBlobStore.Setup(s => s.OpenReadAsync(It.Is<BlobHash>(h => h.Value == testHash)))
                 .ReturnsAsync(() => new MemoryStream(testContent));
 
-            var contentHandlerB = new ContentProtocolHandler(transportB, mockBlobStore.Object);
-            // Verify RequestId is echoed? No, handled internally.
+            var scopeFactoryB = CreateScopeFactory(mockBlobStore.Object);
+            var contentHandlerB = new ContentProtocolHandler(transportB, scopeFactoryB);
             
             routerB.Register(contentHandlerB);
             
@@ -108,7 +110,7 @@ namespace MangaMesh.Peer.Tests
 
             // Wiring for Content Protocol
             var routerA = new ProtocolRouter();
-            var dhtHandlerA = new DhtProtocolHandler(nodeA);
+            var dhtHandlerA = new DhtProtocolHandler { DhtNode = nodeA };
             
             var manifestContent = new byte[] { 0xCA, 0xFE, 0xBA, 0xBE };
             var manifestHash = "mm:manifest:123";
@@ -118,7 +120,8 @@ namespace MangaMesh.Peer.Tests
             mockBlobStoreA.Setup(s => s.OpenReadAsync(It.Is<BlobHash>(h => h.Value == manifestHash)))
                 .ReturnsAsync(() => new MemoryStream(manifestContent));
 
-            var contentHandlerA = new ContentProtocolHandler(transportA, mockBlobStoreA.Object);
+            var scopeFactoryA = CreateScopeFactory(mockBlobStoreA.Object);
+            var contentHandlerA = new ContentProtocolHandler(transportA, scopeFactoryA);
             contentHandlerA.DhtNode = nodeA; // IMPORTANT: DhtNode is needed? 
             // ContentProtocolHandler doesn't use DhtNode for GetManifest handling (except responding).
             // DhtNode property is public.
@@ -135,7 +138,7 @@ namespace MangaMesh.Peer.Tests
             transportA.OnMessage += routerA.RouteAsync;
 
             var routerB = new ProtocolRouter();
-            var dhtHandlerB = new DhtProtocolHandler(nodeB);
+            var dhtHandlerB = new DhtProtocolHandler { DhtNode = nodeB };
             
             var receivedTcs = new TaskCompletionSource<byte[]>();
             var verifyingHandlerB = new VerifyingContentHandler(null, receivedTcs); // Only cares about data
@@ -197,6 +200,15 @@ namespace MangaMesh.Peer.Tests
 
             var receivedData = await receivedTcs.Task;
             CollectionAssert.AreEqual(manifestContent, receivedData);
+        }
+
+        private static IServiceScopeFactory CreateScopeFactory(IBlobStore blobStore, IManifestStore? manifestStore = null)
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton(blobStore);
+            services.AddSingleton(manifestStore ?? new Mock<IManifestStore>().Object);
+            var provider = services.BuildServiceProvider();
+            return provider.GetRequiredService<IServiceScopeFactory>();
         }
 
         private (DhtNode, TcpTransport) CreateNode(int port)
