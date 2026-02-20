@@ -36,6 +36,11 @@ namespace MangaMesh.Peer.ClientApi.Services
             return _logs.ToArray();
         }
 
+        public void Clear()
+        {
+            _logs.Clear();
+        }
+
         public void Dispose() { }
     }
 

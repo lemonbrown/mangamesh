@@ -160,7 +160,13 @@ public class GatewayService
         _logger.LogInformation($"[Gateway:Redirect] Found {providers.Count} providers for hash {contentHash}");
 
         return providers
-            .Select(p => $"http://{p.Address.Host}:{_config.PeerClientApiPort}/{apiRelativePath}")
+            .Select(p =>
+            {
+                var httpPort = p.Address.HttpApiPort > 0
+                    ? p.Address.HttpApiPort
+                    : _config.PeerClientApiPort;
+                return $"http://{p.Address.Host}:{httpPort}/{apiRelativePath}";
+            })
             .Distinct()
             .ToList();
     }

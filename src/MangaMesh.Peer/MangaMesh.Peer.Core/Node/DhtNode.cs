@@ -5,6 +5,7 @@ using MangaMesh.Peer.Core.Keys;
 using MangaMesh.Peer.Core.Transport;
 using MangaMesh.Peer.Core.Content;
 using MangaMesh.Peer.Core.Helpers;
+using MangaMesh.Peer.Core.Manifests;
 using MangaMesh.Peer.Core.Tracker;
 using MangaMesh.Shared.Models;
 using Microsoft.Extensions.Logging;
@@ -32,9 +33,12 @@ namespace MangaMesh.Peer.Core.Node
         private readonly IDhtRequestTracker _requestTracker;
         private readonly INodeAnnouncer _tracker;
         private readonly INodeConnectionInfoProvider _connectionInfo;
+        private readonly IManifestStore? _manifestStore;
         private readonly ILogger<DhtNode> _logger;
 
         private bool _running = false;
+        private int _httpApiPort = 0;
+        private bool _httpApiPortResolved = false;
 
         public INodeIdentity Identity { get; private set; }
         public ITransport Transport { get; private set; }
@@ -52,7 +56,8 @@ namespace MangaMesh.Peer.Core.Node
             IKeyStore keyStore,
             INodeAnnouncer tracker,
             INodeConnectionInfoProvider connectionInfo,
-            ILogger<DhtNode> logger)
+            ILogger<DhtNode> logger,
+            IManifestStore? manifestStore = null)
         {
             Identity = identity;
             Transport = transport;
@@ -64,6 +69,7 @@ namespace MangaMesh.Peer.Core.Node
             _keyStore = keyStore;
             _tracker = tracker;
             _connectionInfo = connectionInfo;
+            _manifestStore = manifestStore;
             _logger = logger;
         }
 
@@ -118,17 +124,42 @@ namespace MangaMesh.Peer.Core.Node
             try
             {
                 _logger.LogDebug("DhtNode: Announcing to index...");
-                var (ip, _) = await _connectionInfo.GetConnectionInfoAsync();
-                var port = Transport.Port;
 
-                var manifests = Storage.GetAllContentHashes()
-                    .Select(h => Convert.ToHexString(h).ToLowerInvariant())
-                    .ToList();
+                List<string> manifests;
+                List<ManifestSummary>? manifestData = null;
+
+                if (_manifestStore != null)
+                {
+                    var allManifests = await _manifestStore.GetAllWithDataAsync();
+                    manifests = allManifests.Select(x => x.Hash.Value).ToList();
+                    manifestData = allManifests.Select(x => new ManifestSummary
+                    {
+                        Hash = x.Hash.Value,
+                        SeriesId = x.Manifest.SeriesId,
+                        ChapterId = x.Manifest.ChapterId,
+                        Title = x.Manifest.Title,
+                        ChapterNumber = x.Manifest.ChapterNumber,
+                        Volume = x.Manifest.Volume,
+                        Language = x.Manifest.Language,
+                        ScanGroup = x.Manifest.ScanGroup,
+                        Quality = x.Manifest.Quality,
+                        TotalSize = x.Manifest.TotalSize,
+                        CreatedUtc = x.Manifest.CreatedUtc
+                    }).ToList();
+                }
+                else
+                {
+                    manifests = Storage.GetAllContentHashes()
+                        .Select(h => Convert.ToHexString(h).ToLowerInvariant())
+                        .ToList();
+                }
+
                 _logger.LogDebug("DhtNode: Found {Count} manifests to announce.", manifests.Count);
 
                 var request = new Shared.Models.AnnounceRequest(
                     Convert.ToHexString(Identity.NodeId).ToLowerInvariant(),
-                    manifests);
+                    manifests,
+                    manifestData);
 
                 await _tracker.AnnounceAsync(request);
                 _logger.LogDebug("DhtNode: Announcement successful.");
@@ -277,7 +308,7 @@ namespace MangaMesh.Peer.Core.Node
                                     if (!string.IsNullOrEmpty(d.NodeId) && d.Port > 0)
                                     {
                                         var dId = Convert.FromHexString(d.NodeId);
-                                        var newEntry = new RoutingEntry { NodeId = dId, Address = new NodeAddress(d.Host, d.Port), LastSeenUtc = DateTime.UtcNow };
+                                        var newEntry = new RoutingEntry { NodeId = dId, Address = new NodeAddress(d.Host, d.Port, HttpApiPort: d.HttpApiPort), LastSeenUtc = DateTime.UtcNow };
                                         _routingTable.AddOrUpdate(newEntry);
                                         if (!visited.Contains($"{d.Host}:{d.Port}")) nodesToQuery.Add(newEntry);
                                     }
@@ -417,7 +448,7 @@ namespace MangaMesh.Peer.Core.Node
                                 }
                                 else if (pid.SequenceEqual(response.SenderNodeId) && !string.IsNullOrEmpty(response.ComputedSenderIp))
                                 {
-                                    providers.Add(new ProviderInfo { NodeId = pid, Address = new NodeAddress(response.ComputedSenderIp, response.SenderPort) });
+                                    providers.Add(new ProviderInfo { NodeId = pid, Address = new NodeAddress(response.ComputedSenderIp, response.SenderPort, HttpApiPort: response.SenderHttpApiPort) });
                                 }
                             }
                         }
@@ -444,7 +475,7 @@ namespace MangaMesh.Peer.Core.Node
                                         var newEntry = new RoutingEntry
                                         {
                                             NodeId = dId,
-                                            Address = new NodeAddress(d.Host, d.Port), // Assuming Host is IP or resolvable
+                                            Address = new NodeAddress(d.Host, d.Port, HttpApiPort: d.HttpApiPort),
                                             LastSeenUtc = DateTime.UtcNow
                                         };
 
@@ -594,7 +625,7 @@ namespace MangaMesh.Peer.Core.Node
                                         var entry = new RoutingEntry
                                         {
                                             NodeId = discoveredId,
-                                            Address = new NodeAddress(d.Host, d.Port),
+                                            Address = new NodeAddress(d.Host, d.Port, HttpApiPort: d.HttpApiPort),
                                             LastSeenUtc = DateTime.UtcNow
                                         };
                                         _routingTable.AddOrUpdate(entry);
@@ -676,7 +707,7 @@ namespace MangaMesh.Peer.Core.Node
                 _routingTable.AddOrUpdate(new RoutingEntry
                 {
                     NodeId = message.SenderNodeId,
-                    Address = new NodeAddress(message.ComputedSenderIp, message.SenderPort),
+                    Address = new NodeAddress(message.ComputedSenderIp, message.SenderPort, HttpApiPort: message.SenderHttpApiPort),
                     LastSeenUtc = DateTime.UtcNow
                 });
             }
@@ -765,10 +796,23 @@ namespace MangaMesh.Peer.Core.Node
                 await SendDhtMessageAsync(senderAddress, reply);
         }
 
+        private async Task<int> GetHttpApiPortAsync()
+        {
+            if (!_httpApiPortResolved)
+            {
+                var (_, _, port) = await _connectionInfo.GetConnectionInfoAsync();
+                _httpApiPort = port;
+                _httpApiPortResolved = true;
+            }
+            return _httpApiPort;
+        }
+
         private async Task<DhtMessage?> SendDhtMessageAsync(NodeAddress address, DhtMessage message, bool waitForResponse = false)
         {
             try
             {
+                message.SenderHttpApiPort = await GetHttpApiPortAsync();
+
                 TaskCompletionSource<DhtMessage>? tcs = null;
                 if (waitForResponse)
                 {
@@ -810,7 +854,8 @@ namespace MangaMesh.Peer.Core.Node
             {
                 Host = n.Address.Host,
                 Port = n.Address.Port,
-                NodeId = Convert.ToHexString(n.NodeId)
+                NodeId = Convert.ToHexString(n.NodeId),
+                HttpApiPort = n.Address.HttpApiPort
             }).ToList();
             return JsonSerializer.SerializeToUtf8Bytes(addresses);
         }
@@ -847,5 +892,6 @@ namespace MangaMesh.Peer.Core.Node
         public string Host { get; set; } = string.Empty;
         public int Port { get; set; }
         public string NodeId { get; set; } = string.Empty;
+        public int HttpApiPort { get; set; }
     }
 }

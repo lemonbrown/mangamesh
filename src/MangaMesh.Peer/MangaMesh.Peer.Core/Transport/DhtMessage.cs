@@ -21,6 +21,12 @@ namespace MangaMesh.Peer.Core.Transport
 
         public int SenderPort { get; set; }
 
+        /// <summary>
+        /// The HTTP API port of the sending peer's ClientApi (e.g. 5202).
+        /// 0 means not announced (old peers or non-serving nodes).
+        /// </summary>
+        public int SenderHttpApiPort { get; set; }
+
         [System.Text.Json.Serialization.JsonIgnore]
         public string ComputedSenderIp { get; set; } = string.Empty;
 

@@ -72,8 +72,7 @@ namespace MangaMesh.Peer.Core.Tracker
         /// </summary>
         public async Task AnnounceAsync(Shared.Models.AnnounceRequest announcementRequest)
         {
-            var request = new AnnounceRequest(announcementRequest.NodeId, announcementRequest.Manifests);
-            var response = await _httpClient.PostAsJsonAsync("/announce", request);
+            var response = await _httpClient.PostAsJsonAsync("/announce", announcementRequest);
             response.EnsureSuccessStatusCode();
         }
 

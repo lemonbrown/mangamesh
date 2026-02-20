@@ -16,6 +16,7 @@ builder.Services.AddControllers()
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddScoped<IManifestEntryStore, SqliteManifestEntryStore>();
+builder.Services.AddScoped<IManifestAnnouncerStore, SqliteManifestAnnouncerStore>();
 builder.Services.AddScoped<ISeriesRegistry, SqliteSeriesRegistry>();
 builder.Services.AddScoped<ISeriesStore, ManifestDerivedSeriesStore>();
 builder.Services.AddSwaggerGen();
@@ -155,6 +156,14 @@ using (var scope = app.Services.CreateScope())
             ""CreatedUtc"" TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ""IX_SeriesDefinitions_Source_ExternalMangaId"" ON ""SeriesDefinitions"" (""Source"", ""ExternalMangaId"");
+        CREATE TABLE IF NOT EXISTS ""ManifestAnnouncers"" (
+            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ManifestAnnouncers"" PRIMARY KEY AUTOINCREMENT,
+            ""ManifestHash"" TEXT NOT NULL,
+            ""NodeId"" TEXT NOT NULL,
+            ""AnnouncedAt"" TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ""IX_ManifestAnnouncers_ManifestHash"" ON ""ManifestAnnouncers"" (""ManifestHash"");
+        CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ManifestAnnouncers_ManifestHash_NodeId"" ON ""ManifestAnnouncers"" (""ManifestHash"", ""NodeId"");
 
     ");
     }
@@ -222,82 +231,6 @@ using (var scope = app.Services.CreateScope())
                 }
             }
             catch (Exception ex) { Console.WriteLine($"Failed to migrate challenges: {ex.Message}"); }
-        }
-    }
-
-    // Migration: Manifest Entries (from JSON files)
-    if (!db.ManifestEntries.Any())
-    {
-        var manifestDir = Path.Combine(dataDir, "manifestentries");
-        if (Directory.Exists(manifestDir))
-        {
-            try
-            {
-                var files = Directory.GetFiles(manifestDir, "*.json");
-                var count = 0;
-                foreach (var file in files)
-                {
-                    var json = File.ReadAllText(file);
-                    var entry = System.Text.Json.JsonSerializer.Deserialize<ManifestEntry>(json);
-                    if (entry != null && !string.IsNullOrEmpty(entry.ManifestHash))
-                    {
-                        db.ManifestEntries.Add(new ManifestEntryEntity
-                        {
-                            ManifestHash = entry.ManifestHash,
-                            SeriesId = entry.SeriesId,
-                            ChapterId = entry.ChapterId,
-                            ChapterNumber = entry.ChapterNumber,
-                            Volume = entry.Volume,
-                            Language = entry.Language,
-                            ScanGroup = entry.ScanGroup,
-                            Quality = entry.Quality,
-                            AnnouncedUtc = entry.AnnouncedUtc,
-                            LastSeenUtc = entry.LastSeenUtc,
-                            Title = entry.Title,
-                            ExternalMetadataSource = entry.ExternalMetadataSource,
-                            ExteralMetadataMangaId = entry.ExteralMetadataMangaId
-                        });
-                        count++;
-                    }
-                }
-                if (count > 0)
-                {
-                    db.SaveChanges();
-                    Console.WriteLine($"Migrated {count} manifest entries to SQLite.");
-                }
-            }
-            catch (Exception ex) { Console.WriteLine($"Failed to migrate manifest entries: {ex.Message}"); }
-        }
-    }
-
-    // Migration: Series Registry (from JSON file)
-    if (!db.SeriesDefinitions.Any())
-    {
-        var seriesPath = Path.Combine(dataDir, "series", "registry.json");
-        if (File.Exists(seriesPath))
-        {
-            try
-            {
-                var json = File.ReadAllText(seriesPath);
-                var series = System.Text.Json.JsonSerializer.Deserialize<List<SeriesDefinition>>(json);
-                if (series != null)
-                {
-                    foreach (var s in series)
-                    {
-                        db.SeriesDefinitions.Add(new SeriesDefinitionEntity
-                        {
-                            SeriesId = s.SeriesId,
-                            Source = (int)s.Source,
-                            ExternalMangaId = s.ExternalMangaId,
-                            Title = s.Title,
-                            CreatedUtc = s.CreatedUtc
-                        });
-                    }
-                    db.SaveChanges();
-                    Console.WriteLine($"Migrated {series.Count} series definitions to SQLite.");
-                }
-            }
-            catch (Exception ex) { Console.WriteLine($"Failed to migrate series registry: {ex.Message}"); }
         }
     }
 }

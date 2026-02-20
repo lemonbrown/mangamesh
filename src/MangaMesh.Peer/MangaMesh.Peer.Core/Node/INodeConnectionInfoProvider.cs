@@ -5,6 +5,10 @@ namespace MangaMesh.Peer.Core.Node
 {
     public interface INodeConnectionInfoProvider
     {
-        Task<(string IP, int Port)> GetConnectionInfoAsync();
+        /// <summary>
+        /// Returns the node's IP, DHT TCP port, and HTTP API port.
+        /// DhtPort or HttpApiPort may be 0 if not applicable for this node type.
+        /// </summary>
+        Task<(string IP, int DhtPort, int HttpApiPort)> GetConnectionInfoAsync();
     }
 }

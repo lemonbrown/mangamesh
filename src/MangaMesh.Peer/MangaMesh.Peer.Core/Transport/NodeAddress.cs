@@ -6,6 +6,6 @@ using System.Threading.Tasks;
 
 namespace MangaMesh.Peer.Core.Transport
 {
-    public record NodeAddress(string Host, int Port, string? OnionAddress = null);
+    public record NodeAddress(string Host, int Port, string? OnionAddress = null, int HttpApiPort = 0);
 
 }

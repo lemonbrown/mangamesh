@@ -120,6 +120,7 @@ var builder = new HostBuilder()
         var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
         var bootstrapProvider = sp.GetRequiredService<IBootstrapNodeProvider>();
         var logger = sp.GetRequiredService<ILogger<DhtNode>>();
+        var manifestStore = sp.GetService<IManifestStore>();
         var routingTable = new KBucketRoutingTable(identity.NodeId);
         var requestTracker = new DhtRequestTracker();
 
@@ -133,7 +134,7 @@ var builder = new HostBuilder()
 
         transport.OnMessage += router.RouteAsync;
 
-        var node = new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
+        var node = new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger, manifestStore);
 
         // Circular dependency resolution for ContentProtocolHandler -> DhtNode (for request tracking/callbacks)
         contentHandler.DhtNode = node;

@@ -75,9 +75,10 @@ builder.Services.AddSingleton<IDhtNode>(sp =>
     var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
     var bootstrapProvider = sp.GetRequiredService<IBootstrapNodeProvider>();
     var logger = sp.GetRequiredService<ILogger<DhtNode>>();
+    var manifestStore = sp.GetService<IManifestStore>();
     var routingTable = new KBucketRoutingTable(identity.NodeId);
     var requestTracker = new DhtRequestTracker();
-    return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
+    return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger, manifestStore);
 });
 
 // Register Tracker Client

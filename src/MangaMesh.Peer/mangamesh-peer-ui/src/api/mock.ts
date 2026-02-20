@@ -13,7 +13,8 @@ export const mockNodeStatus: NodeStatus = {
 export const mockStorageStats: StorageStats = {
     totalMb: 51200, // 50 GB
     usedMb: 12450,
-    manifestCount: 156
+    manifestCount: 156,
+    blobCount: 0
 };
 
 // Mutable mock data

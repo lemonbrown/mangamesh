@@ -17,14 +17,14 @@ namespace MangaMesh.Peer.ClientApi.Services
             _logger = logger;
         }
 
-        public Task<(string IP, int Port)> GetConnectionInfoAsync()
+        public Task<(string IP, int DhtPort, int HttpApiPort)> GetConnectionInfoAsync()
         {
             var ip = GetLocalIpAddress();
-            var port = GetPort();
+            var httpPort = GetPort();
 
-            _logger.LogInformation("Resolved Connection Info: {IP}:{Port}", ip, port);
+            _logger.LogInformation("Resolved Connection Info: IP={IP}, HttpApiPort={HttpApiPort}", ip, httpPort);
 
-            return Task.FromResult((ip, port));
+            return Task.FromResult((ip, 0, httpPort));
         }
 
         private string GetLocalIpAddress()
@@ -56,7 +56,11 @@ namespace MangaMesh.Peer.ClientApi.Services
                 {
                     foreach (var address in addresses.Addresses)
                     {
-                        if (Uri.TryCreate(address, UriKind.Absolute, out var uri))
+                        // Replace wildcard hosts (+, *) so Uri can parse the port
+                        var normalised = address
+                            .Replace("://+:", "://localhost:")
+                            .Replace("://*:", "://localhost:");
+                        if (Uri.TryCreate(normalised, UriKind.Absolute, out var uri))
                         {
                             return uri.Port;
                         }

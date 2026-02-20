@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace MangaMesh.Peer.ClientApi.Controllers
 {
     [ApiController]
-    [Route("logs")]
+    [Route("api/node/logs")]
     public class LogsController : ControllerBase
     {
         private readonly InMemoryLoggerProvider _loggerProvider;
@@ -15,9 +15,19 @@ namespace MangaMesh.Peer.ClientApi.Controllers
         }
 
         [HttpGet]
-        public IEnumerable<LogEntry> GetLogs()
+        public IEnumerable<LogEntry> GetLogs([FromQuery] int? minLevel = null)
         {
-            return _loggerProvider.GetLogs().OrderByDescending(l => l.Timestamp);
+            var logs = _loggerProvider.GetLogs().OrderByDescending(l => l.Timestamp);
+            if (minLevel.HasValue)
+                return logs.Where(l => (int)l.Level >= minLevel.Value);
+            return logs;
+        }
+
+        [HttpDelete]
+        public IActionResult ClearLogs()
+        {
+            _loggerProvider.Clear();
+            return Ok();
         }
     }
 }

@@ -5,5 +5,6 @@ namespace MangaMesh.Peer.Core.Storage
         public double TotalMb { get; set; }
         public double UsedMb { get; set; }
         public int ManifestCount { get; set; }
+        public int BlobCount { get; set; }
     }
 }

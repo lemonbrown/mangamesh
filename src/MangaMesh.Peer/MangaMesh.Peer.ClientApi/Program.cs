@@ -61,7 +61,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.Configure<BlobStoreOptions>(builder.Configuration.GetSection("BlobStore"));
 builder.Services.Configure<DhtOptions>(builder.Configuration.GetSection("Dht"));
 
-builder.Services.AddScoped<IManifestStore, SqliteManifestStore>();
+builder.Services.AddSingleton<IManifestStore, SqliteManifestStore>();
 builder.Services.AddScoped<IStorageMonitorService, StorageMonitorService>();
 builder.Services.AddScoped<IBlobStore, BlobStore>();
 builder.Services.AddSingleton<ISubscriptionStore>(new SubscriptionStore(
@@ -112,9 +112,10 @@ builder.Services.AddSingleton<IDhtNode>(sp =>
     var connectionInfo = sp.GetRequiredService<INodeConnectionInfoProvider>();
     var bootstrapProvider = sp.GetRequiredService<IBootstrapNodeProvider>();
     var logger = sp.GetRequiredService<ILogger<DhtNode>>();
+    var manifestStore = sp.GetRequiredService<IManifestStore>();
     var routingTable = new KBucketRoutingTable(identity.NodeId);
     var requestTracker = new DhtRequestTracker();
-    return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger);
+    return new DhtNode(identity, transport, storage, routingTable, bootstrapProvider, requestTracker, keypairService, keyStore, tracker, connectionInfo, logger, manifestStore);
 });
 builder.Services.AddSingleton<DhtProtocolHandler>();
 builder.Services.AddSingleton<ContentProtocolHandler>();

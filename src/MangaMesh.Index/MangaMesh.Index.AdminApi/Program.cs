@@ -45,6 +45,7 @@ builder.Services.AddHttpClient<ITrackerService, MangaMesh.Index.AdminApi.Service
 
 // builder.Services.AddSingleton<INodeRegistry, NodeRegistry>(); // Removed as we use TrackerService now
 builder.Services.AddScoped<IManifestEntryStore, SqliteManifestEntryStore>();
+builder.Services.AddScoped<IManifestAnnouncerStore, SqliteManifestAnnouncerStore>();
 builder.Services.AddScoped<ISeriesRegistry, SqliteSeriesRegistry>();
 builder.Services.AddScoped<ISeriesStore, ManifestDerivedSeriesStore>();
 builder.Services.AddScoped<IPublicKeyRegistry, PublicKeyRegistry>();
@@ -113,6 +114,14 @@ using (var scope = app.Services.CreateScope())
             ""CreatedUtc"" TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ""IX_SeriesDefinitions_Source_ExternalMangaId"" ON ""SeriesDefinitions"" (""Source"", ""ExternalMangaId"");
+        CREATE TABLE IF NOT EXISTS ""ManifestAnnouncers"" (
+            ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ManifestAnnouncers"" PRIMARY KEY AUTOINCREMENT,
+            ""ManifestHash"" TEXT NOT NULL,
+            ""NodeId"" TEXT NOT NULL,
+            ""AnnouncedAt"" TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ""IX_ManifestAnnouncers_ManifestHash"" ON ""ManifestAnnouncers"" (""ManifestHash"");
+        CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ManifestAnnouncers_ManifestHash_NodeId"" ON ""ManifestAnnouncers"" (""ManifestHash"", ""NodeId"");
     ");
     }
 }

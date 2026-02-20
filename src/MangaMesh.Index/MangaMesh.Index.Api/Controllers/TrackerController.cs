@@ -15,12 +15,12 @@ namespace MangaMesh.Index.Api.Controllers
         private readonly INodeRegistry _nodeRegistry;
         private readonly ICoverService _coverService;
         private readonly IManifestEntryStore _manifestEntryStore;
+        private readonly IManifestAnnouncerStore _manifestAnnouncerStore;
         private readonly IMangaMetadataProvider _metadataProvider;
         private readonly ISeriesRegistry _seriesRegistry;
         private readonly IApprovedKeyStore _approvedKeyStore;
         private readonly MangaMesh.Shared.Services.IManifestAuthorizationService _authService;
-        private readonly IPublicKeyRegistry _keyRegistry; // Need this for manual verification if not injected yet. Check constructor. 
-        // Actually PublicKeyRegistry isn't injected yet. Let's check constructor params.
+        private readonly IPublicKeyRegistry _keyRegistry;
 
         private readonly IConfiguration _configuration;
 
@@ -28,6 +28,7 @@ namespace MangaMesh.Index.Api.Controllers
             ILogger<TrackerController> logger,
             INodeRegistry nodeRegistry,
             IManifestEntryStore manifestEntryStore,
+            IManifestAnnouncerStore manifestAnnouncerStore,
             IMangaMetadataProvider metadataProvider,
             ISeriesRegistry seriesRegistry,
             IApprovedKeyStore approvedKeyStore,
@@ -39,6 +40,7 @@ namespace MangaMesh.Index.Api.Controllers
             _logger = logger;
             _nodeRegistry = nodeRegistry;
             _manifestEntryStore = manifestEntryStore;
+            _manifestAnnouncerStore = manifestAnnouncerStore;
             _metadataProvider = metadataProvider;
             _seriesRegistry = seriesRegistry;
             _approvedKeyStore = approvedKeyStore;
@@ -113,6 +115,41 @@ namespace MangaMesh.Index.Api.Controllers
             if (node == null) return Results.BadRequest();
 
             _nodeRegistry.RegisterOrUpdate(node);
+
+            // Restore any ManifestEntry records that were deleted or lost from the DB.
+            // The peer includes a summary of each manifest it holds so the tracker can
+            // repopulate without requiring a full re-announce with signature verification.
+            if (request.ManifestData != null)
+            {
+                foreach (var summary in request.ManifestData)
+                {
+                    if (await _manifestEntryStore.GetAsync(summary.Hash) == null)
+                    {
+                        _logger.LogInformation("Restoring missing manifest entry {Hash} from node {NodeId}", summary.Hash, request.NodeId);
+                        var entry = new ManifestEntry
+                        {
+                            ManifestHash = summary.Hash,
+                            SeriesId = summary.SeriesId,
+                            ChapterId = summary.ChapterId,
+                            ChapterNumber = summary.ChapterNumber,
+                            Volume = summary.Volume,
+                            Language = summary.Language,
+                            ScanGroup = summary.ScanGroup,
+                            Quality = summary.Quality,
+                            AnnouncedUtc = summary.CreatedUtc,
+                            LastSeenUtc = DateTime.UtcNow,
+                            Title = summary.Title,
+                            ExternalMetadataSource = string.Empty,
+                            ExteralMetadataMangaId = string.Empty
+                        };
+                        await _manifestEntryStore.AddAsync(entry);
+                        await _manifestAnnouncerStore.RecordAsync(summary.Hash, request.NodeId, DateTime.UtcNow);
+
+                        // Also populate ManifestDetails on the node now that we have the entry
+                        node.ManifestDetails[summary.Hash] = (summary.SeriesId, summary.ChapterNumber);
+                    }
+                }
+            }
 
             return Results.Ok();
         }
@@ -323,8 +360,7 @@ namespace MangaMesh.Index.Api.Controllers
             };
 
             await _manifestEntryStore.AddAsync(entry);
-            _nodeRegistry.AddManifestToNode(request.NodeId, request.ManifestHash.Value);
-
+            await _manifestAnnouncerStore.RecordAsync(request.ManifestHash.Value, request.NodeId, DateTime.UtcNow);
             _nodeRegistry.AddManifestToNode(request.NodeId, request.ManifestHash.Value);
 
             // 5. Ensure cover is cached (Fire-and-forget or awaited? Awaited for now to ensure consistency, but logging inside handles errors)

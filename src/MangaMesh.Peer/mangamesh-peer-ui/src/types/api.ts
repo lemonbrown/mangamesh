@@ -35,6 +35,12 @@ export interface StorageStats {
     totalMb: number;
     usedMb: number;
     manifestCount: number;
+    blobCount: number;
+}
+
+export interface StoredBlob {
+    hash: string;
+    sizeBytes: number;
 }
 
 export interface ChapterSummary {

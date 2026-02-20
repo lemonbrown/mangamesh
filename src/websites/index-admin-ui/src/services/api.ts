@@ -45,6 +45,30 @@ export interface Manifest {
     sizeBytes: number;
 }
 
+export interface AnnouncingNode {
+    nodeId: string;
+    announcedAt: string;
+    nodeType?: string;  // present if node is still live in the registry
+    lastSeen?: string;  // present if node is still live in the registry
+}
+
+export interface ManifestDetail {
+    hash: string;
+    title: string;
+    seriesId: string;
+    chapterId: string;
+    chapterNumber: number;
+    volume?: string;
+    language: string;
+    scanGroup?: string;
+    quality?: string;
+    externalMetadataSource: string;
+    externalMangaId: string;
+    announcedAt: string;
+    lastSeenAt: string;
+    announcingNodes: AnnouncingNode[];
+}
+
 export interface Series {
     id: string;
     title: string;
@@ -91,6 +115,10 @@ export const api = {
     // Manifests
     getManifests: async (search?: string): Promise<Manifest[]> => {
         const response = await httpClient.get('/admin/manifests', { params: { q: search } });
+        return response.data;
+    },
+    getManifest: async (hash: string): Promise<ManifestDetail> => {
+        const response = await httpClient.get(`/admin/manifests/${encodeURIComponent(hash)}`);
         return response.data;
     },
     deleteManifest: async (hash: string): Promise<void> => {

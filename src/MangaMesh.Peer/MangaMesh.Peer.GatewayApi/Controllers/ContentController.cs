@@ -54,7 +54,7 @@ public class ContentController : ControllerBase
 
         if (_config.Mode == GatewayMode.PeerRedirect)
         {
-            var peerUrls = await _service.FindPeerUrlsAsync(pageHash, $"api/blob/{pageHash}");
+            var peerUrls = await _service.FindPeerUrlsAsync(pageHash, $"api/file/{pageHash}");
             if (peerUrls.Count == 0) return NotFound();
             return Ok(new PeerRedirectResponse(pageHash, peerUrls));
         }

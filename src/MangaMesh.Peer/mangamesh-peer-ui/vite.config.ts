@@ -46,6 +46,11 @@ export default defineConfig({
         target: 'https://localhost:7124',
         changeOrigin: true,
         secure: false
+      },
+      '^/gateway': {
+        target: 'http://localhost:5170',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/gateway/, '')
       }
     }
   }
