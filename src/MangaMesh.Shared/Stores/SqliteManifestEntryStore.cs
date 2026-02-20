@@ -93,5 +93,28 @@ namespace MangaMesh.Shared.Stores
                 ExteralMetadataMangaId = entity.ExteralMetadataMangaId
             };
         }
+
+        public async Task DeleteAsync(string hash)
+        {
+            var entity = await _db.ManifestEntries.FindAsync(hash);
+            if (entity != null)
+            {
+                _db.ManifestEntries.Remove(entity);
+                await _db.SaveChangesAsync();
+            }
+        }
+
+        public async Task DeleteBySeriesIdAsync(string seriesId)
+        {
+            var entities = await _db.ManifestEntries
+                .Where(e => e.SeriesId == seriesId)
+                .ToListAsync();
+
+            if (entities.Count > 0)
+            {
+                _db.ManifestEntries.RemoveRange(entities);
+                await _db.SaveChangesAsync();
+            }
+        }
     }
 }

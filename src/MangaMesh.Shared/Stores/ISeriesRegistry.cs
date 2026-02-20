@@ -8,5 +8,6 @@ namespace MangaMesh.Shared.Stores
         Task<SeriesDefinition?> GetByIdAsync(string seriesId);
         Task RegisterAsync(SeriesDefinition definition);
         Task<IEnumerable<SeriesDefinition>> GetAllAsync();
+        Task DeleteAsync(string seriesId);
     }
 }

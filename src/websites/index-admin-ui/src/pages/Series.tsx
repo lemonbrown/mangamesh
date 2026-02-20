@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Library, Search, BarChart3 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Library, Search, BarChart3, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Series } from '../services/api';
 
@@ -7,19 +7,29 @@ export default function Series() {
     const [searchTerm, setSearchTerm] = useState('');
     const [seriesList, setSeriesList] = useState<Series[]>([]);
 
-    useEffect(() => {
-        const fetchSeries = async () => {
-            try {
-                const data = await api.getSeries(searchTerm);
-                setSeriesList(data);
-            } catch (error) {
-                console.error("Failed to fetch series:", error);
-            }
-        };
+    const fetchSeries = useCallback(async () => {
+        try {
+            const data = await api.getSeries(searchTerm);
+            setSeriesList(data);
+        } catch (error) {
+            console.error("Failed to fetch series:", error);
+        }
+    }, [searchTerm]);
 
+    useEffect(() => {
         const debounce = setTimeout(fetchSeries, 300);
         return () => clearTimeout(debounce);
-    }, [searchTerm]);
+    }, [fetchSeries]);
+
+    const handleDelete = async (series: Series) => {
+        if (!window.confirm(`Delete "${series.title}" and all its manifests (${series.manifestCount})?`)) return;
+        try {
+            await api.deleteSeries(series.id);
+            await fetchSeries();
+        } catch (error) {
+            console.error("Failed to delete series:", error);
+        }
+    };
 
     const filteredSeries = seriesList; // Filtering is done server-side
 
@@ -46,9 +56,18 @@ export default function Series() {
                             <div className="p-3 bg-blue-50 rounded-lg">
                                 <Library className="w-6 h-6 text-blue-600" />
                             </div>
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                {series.source}
-                            </span>
+                            <div className="flex items-center space-x-2">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                    {series.source}
+                                </span>
+                                <button
+                                    onClick={() => handleDelete(series)}
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete series"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
                         <h3 className="text-lg font-bold text-gray-900 mb-1">{series.title}</h3>
                         <p className="text-sm text-gray-500 font-mono mb-4">ID: {series.id}</p>

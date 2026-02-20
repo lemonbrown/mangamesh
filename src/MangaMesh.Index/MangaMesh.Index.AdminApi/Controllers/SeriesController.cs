@@ -45,5 +45,14 @@ namespace MangaMesh.Index.AdminApi.Controllers
 
             return Ok(result);
         }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteSeries(string id)
+        {
+            var decoded = Uri.UnescapeDataString(id);
+            await _manifestStore.DeleteBySeriesIdAsync(decoded);
+            await _seriesRegistry.DeleteAsync(decoded);
+            return Ok();
+        }
     }
 }

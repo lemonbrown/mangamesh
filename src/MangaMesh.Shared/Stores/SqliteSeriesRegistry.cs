@@ -74,6 +74,16 @@ namespace MangaMesh.Shared.Stores
                 .ToListAsync();
         }
 
+        public async Task DeleteAsync(string seriesId)
+        {
+            var entity = await _db.SeriesDefinitions.FindAsync(seriesId);
+            if (entity != null)
+            {
+                _db.SeriesDefinitions.Remove(entity);
+                await _db.SaveChangesAsync();
+            }
+        }
+
         private static SeriesDefinition ToModel(SeriesDefinitionEntity entity)
         {
             return new SeriesDefinition

@@ -42,5 +42,13 @@ namespace MangaMesh.Index.AdminApi.Controllers
 
             return Ok(result);
         }
+
+        [HttpDelete("{hash}")]
+        public async Task<IActionResult> DeleteManifest(string hash)
+        {
+            var decoded = Uri.UnescapeDataString(hash);
+            await _manifestStore.DeleteAsync(decoded);
+            return Ok();
+        }
     }
 }

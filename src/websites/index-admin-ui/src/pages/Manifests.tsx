@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { FileText, Search, Filter, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { FileText, Search, Filter, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Manifest } from '../services/api';
 
@@ -7,19 +7,29 @@ export default function Manifests() {
     const [searchTerm, setSearchTerm] = useState('');
     const [manifests, setManifests] = useState<Manifest[]>([]);
 
-    useEffect(() => {
-        const fetchManifests = async () => {
-            try {
-                const data = await api.getManifests(searchTerm);
-                setManifests(data);
-            } catch (error) {
-                console.error("Failed to fetch manifests:", error);
-            }
-        };
+    const fetchManifests = useCallback(async () => {
+        try {
+            const data = await api.getManifests(searchTerm);
+            setManifests(data);
+        } catch (error) {
+            console.error("Failed to fetch manifests:", error);
+        }
+    }, [searchTerm]);
 
+    useEffect(() => {
         const debounce = setTimeout(fetchManifests, 300);
         return () => clearTimeout(debounce);
-    }, [searchTerm]);
+    }, [fetchManifests]);
+
+    const handleDelete = async (manifest: Manifest) => {
+        if (!window.confirm(`Delete manifest ${manifest.hash}?`)) return;
+        try {
+            await api.deleteManifest(manifest.hash);
+            await fetchManifests();
+        } catch (error) {
+            console.error("Failed to delete manifest:", error);
+        }
+    };
 
     const filteredManifests = manifests; // Filtering is done server-side via search term
 
@@ -56,6 +66,7 @@ export default function Manifests() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
                             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Verified</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Uploaded</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -88,6 +99,15 @@ export default function Manifests() {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
                                     {new Date(manifest.uploadedAt).toLocaleString()}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right">
+                                    <button
+                                        onClick={() => handleDelete(manifest)}
+                                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                                        title="Delete manifest"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </td>
                             </tr>
                         ))}

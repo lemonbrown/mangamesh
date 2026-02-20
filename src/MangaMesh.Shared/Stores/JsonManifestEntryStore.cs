@@ -41,6 +41,33 @@ namespace MangaMesh.Shared.Stores
             return _entries.TryGetValue(hash, out var entry) ? entry : null;
         }
 
+        public async Task DeleteAsync(string hash)
+        {
+            await EnsureLoadedAsync();
+            _entries.TryRemove(hash, out _);
+
+            var fileName = Path.Combine(_dataDir, $"{hash}.json");
+            if (File.Exists(fileName))
+            {
+                File.Delete(fileName);
+            }
+        }
+
+        public async Task DeleteBySeriesIdAsync(string seriesId)
+        {
+            await EnsureLoadedAsync();
+            var toRemove = _entries.Values.Where(e => e.SeriesId == seriesId).ToList();
+            foreach (var entry in toRemove)
+            {
+                _entries.TryRemove(entry.ManifestHash, out _);
+                var fileName = Path.Combine(_dataDir, $"{entry.ManifestHash}.json");
+                if (File.Exists(fileName))
+                {
+                    File.Delete(fileName);
+                }
+            }
+        }
+
         private async Task EnsureLoadedAsync()
         {
             if (_loaded) return;

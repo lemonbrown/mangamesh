@@ -93,11 +93,17 @@ export const api = {
         const response = await httpClient.get('/admin/manifests', { params: { q: search } });
         return response.data;
     },
+    deleteManifest: async (hash: string): Promise<void> => {
+        await httpClient.delete(`/admin/manifests/${encodeURIComponent(hash)}`);
+    },
 
     // Series
     getSeries: async (search?: string): Promise<Series[]> => {
         const response = await httpClient.get('/admin/series', { params: { q: search } });
         return response.data;
+    },
+    deleteSeries: async (id: string): Promise<void> => {
+        await httpClient.delete(`/admin/series/${encodeURIComponent(id)}`);
     },
 
     // Logs

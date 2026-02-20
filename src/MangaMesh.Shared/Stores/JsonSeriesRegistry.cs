@@ -90,5 +90,12 @@ namespace MangaMesh.Shared.Stores
             await EnsureLoadedAsync();
             return _definitions.Values;
         }
+
+        public async Task DeleteAsync(string seriesId)
+        {
+            await EnsureLoadedAsync();
+            _definitions.TryRemove(seriesId, out _);
+            await SaveAsync();
+        }
     }
 }
