@@ -11,4 +11,10 @@ public class GatewayConfig
     public string? BootstrapNodes { get; set; }
     public GatewayMode Mode { get; set; } = GatewayMode.Proxy;
     public int PeerClientApiPort { get; set; } = 5202;
+    /// <summary>
+    /// When set, peer redirect URLs use this host instead of internal container IPs.
+    /// Required for Docker/NAT environments where internal IPs aren't reachable from the browser.
+    /// Example: "localhost" or "myserver.com"
+    /// </summary>
+    public string? PeerPublicHost { get; set; }
 }

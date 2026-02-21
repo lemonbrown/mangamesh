@@ -9,6 +9,7 @@ import SeriesDetails from './pages/SeriesDetails';
 import Reader from './components/Reader';
 import Keys from './pages/Keys';
 import Logs from './pages/Logs';
+import Nodes from './pages/Nodes';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="storage" element={<Storage />} />
           <Route path="keys" element={<Keys />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="nodes" element={<Nodes />} />
         </Route>
       </Routes>
     </BrowserRouter>

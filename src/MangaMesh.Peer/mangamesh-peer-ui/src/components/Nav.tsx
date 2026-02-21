@@ -37,6 +37,7 @@ export default function Nav() {
                     <NavLink to="/import">Import</NavLink>
                     <NavLink to="/storage">Storage</NavLink>
                     <NavLink to="/keys">Keys</NavLink>
+                    <NavLink to="/nodes">Nodes</NavLink>
                     <NavLink to="/logs">Logs</NavLink>
                 </div>
             </div>

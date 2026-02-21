@@ -17,3 +17,11 @@ export async function getStorageStats(): Promise<import('../types/api').StorageS
     }
     return await response.json();
 }
+
+export async function getKnownNodes(): Promise<import('../types/api').KnownNode[]> {
+    const response = await fetch(`${API_BASE_URL}/api/node/peers`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch known nodes');
+    }
+    return await response.json();
+}

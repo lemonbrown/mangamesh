@@ -210,3 +210,11 @@ export interface PagedResult<T> {
     offset: number;
     limit: number;
 }
+
+export interface KnownNode {
+    nodeId: string;
+    host: string;
+    port: number;
+    httpApiPort: number;
+    lastSeenUtc: string;
+}

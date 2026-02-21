@@ -9,11 +9,13 @@ namespace MangaMesh.Peer.ClientApi.Services
     public class ServerNodeConnectionInfoProvider : INodeConnectionInfoProvider
     {
         private readonly IServer _server;
+        private readonly IConfiguration _configuration;
         private readonly ILogger<ServerNodeConnectionInfoProvider> _logger;
 
-        public ServerNodeConnectionInfoProvider(IServer server, ILogger<ServerNodeConnectionInfoProvider> logger)
+        public ServerNodeConnectionInfoProvider(IServer server, IConfiguration configuration, ILogger<ServerNodeConnectionInfoProvider> logger)
         {
             _server = server;
+            _configuration = configuration;
             _logger = logger;
         }
 
@@ -49,6 +51,19 @@ namespace MangaMesh.Peer.ClientApi.Services
 
         private int GetPort()
         {
+            // Try ASPNETCORE_URLS configuration first (most reliable in Docker)
+            var urls = _configuration["ASPNETCORE_URLS"];
+            if (!string.IsNullOrEmpty(urls))
+            {
+                var firstUrl = urls.Split(';')[0]
+                    .Replace("://+:", "://localhost:")
+                    .Replace("://*:", "://localhost:");
+                if (Uri.TryCreate(firstUrl, UriKind.Absolute, out var configUri))
+                {
+                    return configUri.Port;
+                }
+            }
+
             try
             {
                 var addresses = _server.Features.Get<IServerAddressesFeature>();

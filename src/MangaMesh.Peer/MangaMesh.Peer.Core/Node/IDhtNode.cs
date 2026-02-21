@@ -12,6 +12,7 @@ namespace MangaMesh.Peer.Core.Node
     {
         INodeIdentity Identity { get; }
         ITransport Transport { get; }
+        IRoutingTable RoutingTable { get; }
 
         Task StoreAsync(byte[] contentHash);
         Task<List<byte[]>> FindValueAsync(byte[] contentHash);

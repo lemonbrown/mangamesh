@@ -44,6 +44,7 @@ services:
       - Gateway__PublicBaseUrl=http://localhost:5173/gateway
       - Gateway__Mode=PeerRedirect
       - Gateway__PeerClientApiPort=8080
+      - Gateway__PeerPublicHost=localhost
       - GatewayCache__MaxCacheSizeMb=500
       # Gateway Node Identity
       - Node__PublicKey=SCwPpOukKLuCdL+D2ut99JPG6vr7MKBEJFYfhTQVxqo=

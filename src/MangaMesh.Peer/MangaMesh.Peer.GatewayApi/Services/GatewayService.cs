@@ -165,7 +165,10 @@ public class GatewayService
                 var httpPort = p.Address.HttpApiPort > 0
                     ? p.Address.HttpApiPort
                     : _config.PeerClientApiPort;
-                return $"http://{p.Address.Host}:{httpPort}/{apiRelativePath}";
+                var host = !string.IsNullOrEmpty(_config.PeerPublicHost)
+                    ? _config.PeerPublicHost
+                    : p.Address.Host;
+                return $"http://{host}:{httpPort}/{apiRelativePath}";
             })
             .Distinct()
             .ToList();
